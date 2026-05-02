@@ -1,0 +1,18 @@
+[
+  {
+    "id": "cis-sample-1",
+    "title": "Single CIS mẫu",
+    "type": "Single",
+    "status": "pending_qc",
+    "isrc": "CC-XXX-26-00001",
+    "upc": "-",
+    "updated": "2026-04-12",
+    "artist": "Artist Demo",
+    "territories": "cis",
+    "releaseDate": "2026-06-01",
+    "language": "Tiếng Việt",
+    "audioAssetUrl": "https://cdn.example.com/masters/track.wav",
+    "coverAssetUrl": "https://cdn.example.com/covers/3000.jpg",
+    "storesSelected": ["vk_music", "yandex_music", "zvuk", "kion_music"]
+  }
+]
