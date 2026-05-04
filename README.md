@@ -1,24 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a Next.js app with an Express backend (in `backend/`).
 
 ## Getting Started
 
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev:all
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The frontend proxies API calls via `/smg-api/*` to the backend on port 3001.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Render.com (single service)
+
+This repo is set up to run **frontend + backend in one Render Web Service**.
+
+- **Build command**: `npm install && npm run build:all`
+- **Start command**: `npm run start:render`
+- **Health check path**: `/smg-api/health`
+
+### Required environment variables (for demo login)
+
+Set these in Render → *Environment* (values are your choice):
+
+- `DEMO_AUTH_ADMIN_PASSWORD`
+- `DEMO_AUTH_LABEL_PASSWORD`
+- `DEMO_AUTH_ARTIST_PASSWORD`
+
+An example file is provided at `.env.example`.
 
 ## Learn More
 

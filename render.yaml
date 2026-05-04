@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: music-dashboard
+    env: node
+    plan: free
+    autoDeploy: true
+    buildCommand: npm install && npm run build:all
+    startCommand: npm run start:render
+    healthCheckPath: /smg-api/health
+    envVars:
+      # Demo auth (bắt buộc nếu muốn đăng nhập)
+      - key: DEMO_AUTH_ADMIN_PASSWORD
+        generateValue: true
+      - key: DEMO_AUTH_LABEL_PASSWORD
+        generateValue: true
+      - key: DEMO_AUTH_ARTIST_PASSWORD
+        generateValue: true
+
+      # (Tuỳ chọn) Bật chế độ mock cho ACRCloud để QC không gọi ra ngoài
+      - key: ACRCLOUD_MOCK
+        value: "1"
+
