@@ -13,30 +13,89 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The frontend proxies API calls via `/smg-api/*` to the backend on port 3001.
 
-## Render.com (một Web Service — Next + API)
+## Render.com — hướng dẫn từ đầu đến cuối
 
-Ứng dụng chạy **một process** duy nhất: `npm run start:render` → `scripts/start-all.mjs` khởi động **Express backend** nội bộ `127.0.0.1:3001`, sau đó **Next.js** lắng nghe `PORT` (Render gán). Trình duyệt chỉ gọi **cùng host**; route Next `/smg-api/*` proxy sang backend (xem `app/smg-api/[[...path]]/route.ts`).
+Kiến trúc: **một Web Service** chạy `npm run start:render` → `scripts/start-all.mjs` bật **Express** nội bộ `127.0.0.1:3001`, rồi **Next.js** trên `PORT` (Render cấp). Trình duyệt chỉ gọi **một URL**; Next proxy `/smg-api/*` sang backend (`app/smg-api/[[...path]]/route.ts`).
 
-| Bước | Việc cần làm |
-|------|----------------|
-| 1 | Đẩy code lên GitHub (repo private/public đều được). |
-| 2 | Vào [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → chọn repo → Render đọc `render.yaml` **hoặc** **Web Service** thủ công: **Root directory** trống, **Build** `npm install && npm run build:all`, **Start** `npm run start:render`. |
-| 3 | Chờ build xong. **Health check** của Render gọi `GET /smg-api/health` (phải trả `200` + JSON `ok: true`). Nếu deploy **Failed** với log `Backend not ready` → trong **Environment** thêm `START_BACKEND_WAIT_MS=180000` rồi **Manual Deploy** lại (cold start free tier đôi khi chậm). |
-| 4 | Mở URL dịch vụ (ví dụ `https://music-dashboard-xxxx.onrender.com`). Mở tab ẩn danh `https://.../smg-api/health` — nếu lỗi 502, xem log: backend có crash không (thiếu `dist`, thiếu env). |
-| 5 | **Tài khoản admin đầu tiên**: trên Render → **Environment** → thêm `AUTH_BOOTSTRAP_SECRET` (chuỗi ngẫu nhiên dài). Gọi **một lần** (curl hoặc Postman): `POST https://<host>/smg-api/api/auth/bootstrap-first-admin` với header `Content-Type: application/json` và body JSON gồm `bootstrapSecret` (trùng env), `login`, `password`, `displayName`. Ví dụ: `{"bootstrapSecret":"YOUR_SECRET","login":"admin@label.com","password":"...","displayName":"Admin"}`. Chi tiết: `backend/env.example`. |
-| 6 | Đăng nhập dashboard. User thường: **Register** trên `/register` hoặc admin tạo tại **Tài khoản hệ thống**. |
+**Phân quyền Label / Nghệ sĩ / Admin** trên Render **giống hệt** chạy local: vai trò lưu trong `backend/data/accounts.json` (bootstrap, đăng ký `/register`, hoặc admin tạo trong **Tài khoản hệ thống**). Render không tự tạo thêm user label/artist — chỉ có sau khi bạn **bootstrap** admin và/hoặc **đăng ký** / **tạo tài khoản**.
 
-### Biến môi trường Render (quan trọng)
+### A. Chuẩn bị
 
-- **`PUBLIC_BACKEND_URL` / `CORS_ORIGIN`**: thường **không cần đặt**. `start-all.mjs` tự gán `PUBLIC_BACKEND_URL = RENDER_EXTERNAL_URL + "/smg-api"` và `CORS_ORIGIN = RENDER_EXTERNAL_URL` để link upload và CORS đúng với một domain.
-- **`NEXT_PUBLIC_BACKEND_URL`**: mặc định để trống — trình duyệt dùng đường dẫn tương đối `/smg-api` (đúng với một Web Service). Chỉ set khi frontend và API là **hai domain khác nhau**.
-- **`START_BACKEND_WAIT_MS`**: tuỳ chọn (mặc định script dùng **120000** ms chờ backend trước khi bật Next).
-- **`DEMO_AUTH_*_PASSWORD`**: blueprint có thể đã tạo random — dùng đăng nhập dự phòng; gợi ý trên UI chỉ khi `AUTH_DEMO_HINTS=1`.
-- **Phân tích production**: tắt mock — **không** đặt `ANALYTICS_REPORT_MOCK` trên Render; cấu hình `ANALYTICS_PARTNER_REPORT_URL` (và Bearer nếu cần) theo `backend/env.example`.
+1. Code đã có trên GitHub (ví dụ branch `main`).
+2. Tài khoản [Render](https://render.com); nên liên kết GitHub trong **Account Settings** để chọn repo dễ hơn.
+
+### B. Tạo dịch vụ
+
+1. [Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → chọn repo → Render đọc `render.yaml` ở thư mục gốc.  
+   **Hoặc** **New** → **Web Service** → chọn repo, cấu hình:
+   - **Root Directory**: để trống.
+   - **Build Command**: `npm install && npm run build:all`
+   - **Start Command**: `npm run start:render`
+   - **Health Check Path**: `/smg-api/health`
+2. **Create** / **Apply** và chờ deploy xong.
+
+### C. Kiểm tra sau deploy
+
+1. **Logs**: không kẹt mãi `Backend not ready`. Nếu kẹt → **Environment** → `START_BACKEND_WAIT_MS=180000` → **Manual Deploy**.
+2. Trình duyệt: `https://<tên-service>.onrender.com/smg-api/health` → **200** và JSON `"ok": true`.
+3. Mở `https://<tên-service>.onrender.com` (trang chủ / đăng nhập).
+
+### D. Admin nền tảng lần đầu (bootstrap)
+
+1. Render → **Environment** → thêm `AUTH_BOOTSTRAP_SECRET` (chuỗi bí mật, không đưa vào Git).
+2. Gọi **một lần** (thay `<HOST>` và nội dung JSON):
+
+```bash
+curl -sS -X POST "https://<HOST>/smg-api/api/auth/bootstrap-first-admin" \
+  -H "Content-Type: application/json" \
+  -d "{\"bootstrapSecret\":\"<AUTH_BOOTSTRAP_SECRET>\",\"login\":\"admin@ban.com\",\"password\":\"MatKhauManh\",\"displayName\":\"Admin SMG\"}"
+```
+
+3. Đăng nhập `/login` → vai trò **Quản trị nền tảng** (`platform_admin`). Chi tiết thêm: `backend/env.example`.
+
+### E. Tài khoản Label và Nghệ sĩ
+
+| Cách | Kết quả vai trò |
+|------|-----------------|
+| `/register` chọn **Nhãn (label)** | `customer_admin` — admin label (QC + tài chính/phân tích, không CMS/tài khoản hệ thống/deal) |
+| `/register` chọn **Nghệ sĩ** | `artist` — không QC admin, không menu Phân tích/Tài chính |
+| Đăng nhập **platform_admin** → **Tài khoản hệ thống** | Tạo user bất kỳ vai trò `artist` / `customer_admin` / `platform_admin` |
+
+**Đã dùng admin chưa, label/nghệ sĩ chưa?** — Sau bootstrap chỉ có **một admin nền tảng** cho đến khi bạn **Register** hoặc **tạo thêm** trong Tài khoản hệ thống. Không có user label/artist ẩn trên Render.
+
+### F. (Tuỳ chọn) Đăng nhập demo qua env
+
+Nếu đặt `DEMO_AUTH_ADMIN_PASSWORD`, `DEMO_AUTH_LABEL_PASSWORD`, `DEMO_AUTH_ARTIST_PASSWORD` và `AUTH_DEMO_HINTS=1`, có thể đăng nhập theo `backend/src/auth/demoLogin.ts`:
+
+| Login | Vai trò | Mật khẩu (env) |
+|-------|---------|-----------------|
+| `admin` hoặc `admin@smg.local` | `platform_admin` | `DEMO_AUTH_ADMIN_PASSWORD` |
+| `labeladmin` hoặc `label.admin@smg.local` | `customer_admin` | `DEMO_AUTH_LABEL_PASSWORD` |
+| `artist` hoặc `artist@smg.local` | `artist` | `DEMO_AUTH_ARTIST_PASSWORD` |
+
+**Lưu ý:** Backend **ưu tiên** tài khoản trong `accounts.json`. Nếu trùng login với user đã lưu, dùng mật khẩu trong file, không phải env. Production: thường tắt `AUTH_DEMO_HINTS`.
+
+### Phân quyền (đối chiếu code)
+
+| Khu vực | `platform_admin` | `customer_admin` (Label) | `artist` |
+|---------|-------------------|---------------------------|----------|
+| Trang chủ, Phát hành, Kho, Marketing, Smart link, Nghệ sĩ, Cài đặt | Có | Có | Có |
+| **Phân tích**, **Tài chính** | Có | Có | **Không** (`RequireFinancialAccess`, menu ẩn) |
+| **QC & duyệt** | Có | Có | **Không** (`RequireQcAccess`) |
+| **Cửa hàng & CMS**, **Tài khoản hệ thống**, **Deal** | Có | **Không** | **Không** (`RequirePlatformAdmin`) |
+
+File tham chiếu: `app/lib/permissions.ts`, `app/dashboard/layout.tsx`, các component `Require*`.
+
+### Biến môi trường Render (tóm tắt)
+
+- **`PUBLIC_BACKEND_URL` / `CORS_ORIGIN`**: thường **không cần đặt** — `start-all.mjs` gán từ `RENDER_EXTERNAL_URL`.
+- **`NEXT_PUBLIC_BACKEND_URL`**: để trống nếu cùng một host (mặc định `/smg-api`).
+- **`START_BACKEND_WAIT_MS`**: tuỳ chọn (mặc định chờ backend **120000** ms).
+- **Phân tích production**: không bật `ANALYTICS_REPORT_MOCK`; dùng `ANALYTICS_PARTNER_REPORT_URL` theo `backend/env.example`.
 
 ### Dữ liệu & free tier
 
-- Dữ liệu ghi file: `backend/data/` (`accounts.json`, `partner-deals.json`, upload…). **Free tier**: disk theo instance có thể **mất khi redeploy/scale** — production nên gắn [Persistent Disk](https://render.com/docs/disks) mount vào `backend/data` hoặc chuyển sang database/S3.
+- `backend/data/` có thể **mất khi instance restart** — nên [Persistent Disk](https://render.com/docs/disks) hoặc DB/S3.
 
 ### Kiểm tra giống Render (local)
 
