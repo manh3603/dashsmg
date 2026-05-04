@@ -8,7 +8,9 @@
     "dev:backend:fresh": "npx --yes kill-port 3001 && npm run dev --prefix backend",
     "dev:all": "concurrently -k -n api,next -c magenta,cyan \"npx --yes kill-port 3001 && npm run dev --prefix backend\" \"npx --yes wait-on -t 120000 http://127.0.0.1:3001/health && npm run dev\"",
     "build": "next build",
+    "build:all": "npm run build && npm run build --prefix backend",
     "start": "next start --hostname 0.0.0.0",
+    "start:render": "node scripts/start-all.mjs",
     "lint": "eslint"
   },
   "dependencies": {
