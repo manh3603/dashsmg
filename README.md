@@ -13,30 +13,50 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The frontend proxies API calls via `/smg-api/*` to the backend on port 3001.
 
-## Render.com (single service)
+## Render.com (một Web Service — Next + API)
 
-Chạy **Next + API Express** trong một Web Service (`scripts/start-all.mjs`).
+Ứng dụng chạy **một process** duy nhất: `npm run start:render` → `scripts/start-all.mjs` khởi động **Express backend** nội bộ `127.0.0.1:3001`, sau đó **Next.js** lắng nghe `PORT` (Render gán). Trình duyệt chỉ gọi **cùng host**; route Next `/smg-api/*` proxy sang backend (xem `app/smg-api/[[...path]]/route.ts`).
 
-- **Build**: `npm install && npm run build:all`
-- **Start**: `npm run start:render`
-- **Health check**: `/smg-api/health` (proxy tới backend `/health`)
+| Bước | Việc cần làm |
+|------|----------------|
+| 1 | Đẩy code lên GitHub (repo private/public đều được). |
+| 2 | Vào [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → chọn repo → Render đọc `render.yaml` **hoặc** **Web Service** thủ công: **Root directory** trống, **Build** `npm install && npm run build:all`, **Start** `npm run start:render`. |
+| 3 | Chờ build xong. **Health check** của Render gọi `GET /smg-api/health` (phải trả `200` + JSON `ok: true`). Nếu deploy **Failed** với log `Backend not ready` → trong **Environment** thêm `START_BACKEND_WAIT_MS=180000` rồi **Manual Deploy** lại (cold start free tier đôi khi chậm). |
+| 4 | Mở URL dịch vụ (ví dụ `https://music-dashboard-xxxx.onrender.com`). Mở tab ẩn danh `https://.../smg-api/health` — nếu lỗi 502, xem log: backend có crash không (thiếu `dist`, thiếu env). |
+| 5 | **Tài khoản admin đầu tiên**: trên Render → **Environment** → thêm `AUTH_BOOTSTRAP_SECRET` (chuỗi ngẫu nhiên dài). Gọi **một lần** (curl hoặc Postman): `POST https://<host>/smg-api/api/auth/bootstrap-first-admin` với header `Content-Type: application/json` và body JSON gồm `bootstrapSecret` (trùng env), `login`, `password`, `displayName`. Ví dụ: `{"bootstrapSecret":"YOUR_SECRET","login":"admin@label.com","password":"...","displayName":"Admin"}`. Chi tiết: `backend/env.example`. |
+| 6 | Đăng nhập dashboard. User thường: **Register** trên `/register` hoặc admin tạo tại **Tài khoản hệ thống**. |
 
-`start-all.mjs` tự gán **`PUBLIC_BACKEND_URL`** = `RENDER_EXTERNAL_URL` + `/smg-api` (link upload/file công khai) và **`CORS_ORIGIN`** từ `RENDER_EXTERNAL_URL` khi bạn không đặt tay.
+### Biến môi trường Render (quan trọng)
 
-### Tài khoản & dữ liệu
+- **`PUBLIC_BACKEND_URL` / `CORS_ORIGIN`**: thường **không cần đặt**. `start-all.mjs` tự gán `PUBLIC_BACKEND_URL = RENDER_EXTERNAL_URL + "/smg-api"` và `CORS_ORIGIN = RENDER_EXTERNAL_URL` để link upload và CORS đúng với một domain.
+- **`NEXT_PUBLIC_BACKEND_URL`**: mặc định để trống — trình duyệt dùng đường dẫn tương đối `/smg-api` (đúng với một Web Service). Chỉ set khi frontend và API là **hai domain khác nhau**.
+- **`START_BACKEND_WAIT_MS`**: tuỳ chọn (mặc định script dùng **120000** ms chờ backend trước khi bật Next).
+- **`DEMO_AUTH_*_PASSWORD`**: blueprint có thể đã tạo random — dùng đăng nhập dự phòng; gợi ý trên UI chỉ khi `AUTH_DEMO_HINTS=1`.
+- **Phân tích production**: tắt mock — **không** đặt `ANALYTICS_REPORT_MOCK` trên Render; cấu hình `ANALYTICS_PARTNER_REPORT_URL` (và Bearer nếu cần) theo `backend/env.example`.
 
-- **Thương mại**: đăng ký `/register` hoặc quản trị tạo user tại **Tài khoản hệ thống** — lưu `backend/data/accounts.json` (bcrypt).
-- **Admin đầu tiên**: đặt `AUTH_BOOTSTRAP_SECRET` trên Render, gọi một lần `POST /api/auth/bootstrap-first-admin` (xem `backend/env.example`).
-- **Deal đối tác**: trang **Deal đối tác** — `backend/data/partner-deals.json`.
-- **Free tier**: ổ đĩa instance có thể **mất khi restart** — bản production nên gắn **Persistent Disk** trỏ vào `backend/data` hoặc dùng DB ngoài.
+### Dữ liệu & free tier
 
-### Biến môi trường (tuỳ chọn)
+- Dữ liệu ghi file: `backend/data/` (`accounts.json`, `partner-deals.json`, upload…). **Free tier**: disk theo instance có thể **mất khi redeploy/scale** — production nên gắn [Persistent Disk](https://render.com/docs/disks) mount vào `backend/data` hoặc chuyển sang database/S3.
 
-- `DEMO_AUTH_*_PASSWORD` — đăng nhập dự phòng qua env (gợi ý UI chỉ khi `AUTH_DEMO_HINTS=1`).
-- `AUTH_BOOTSTRAP_SECRET` — tạo platform admin lần đầu.
-- `PUBLIC_BACKEND_URL`, `CORS_ORIGIN` — ghi đè nếu domain tách khác `RENDER_EXTERNAL_URL`.
+### Kiểm tra giống Render (local)
 
-Chi tiết API: `backend/env.example`.
+PowerShell:
+
+```powershell
+npm install
+npm run build:all
+$env:NODE_ENV="production"; $env:PORT="10000"; npm run start:render
+```
+
+Bash:
+
+```bash
+npm install && npm run build:all && NODE_ENV=production PORT=10000 npm run start:render
+```
+
+Mở `http://127.0.0.1:10000/smg-api/health` và `http://127.0.0.1:10000`.
+
+Chi tiết API backend: `backend/env.example`.
 
 ## Learn More
 

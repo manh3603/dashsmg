@@ -32,7 +32,13 @@ function run(name, command, args, extraEnv = {}) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForBackendReady(origin, timeoutMs = 60000) {
+/** Render free tier / cold start: backend có thể khởi động chậm — tăng bằng START_BACKEND_WAIT_MS nếu cần. */
+const BACKEND_WAIT_MS = Math.min(
+  Math.max(Number(process.env.START_BACKEND_WAIT_MS ?? 120000) || 120000, 5000),
+  300000
+);
+
+async function waitForBackendReady(origin, timeoutMs = BACKEND_WAIT_MS) {
   const deadline = Date.now() + timeoutMs;
   const url = `${origin.replace(/\/$/, "")}/health`;
   process.stdout.write(`[start] waiting for backend ${url}\n`);

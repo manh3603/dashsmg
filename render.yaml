@@ -1,5 +1,8 @@
 # Blueprint Render.com — một Web Service (Next + API nội bộ qua scripts/start-all.mjs).
 # https://render.com/docs/blueprint-spec
+#
+# Sau khi deploy: mở https://<service>.onrender.com/smg-api/health — phải trả JSON { "ok": true, ... }.
+# Nếu health fail: xem log «Backend not ready» → tăng biến START_BACKEND_WAIT_MS (vd 180000) trên Render.
 services:
   - type: web
     name: music-dashboard
@@ -12,6 +15,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+
+      # Node 20+ (khớp package.json engines) — Render có thể tự chọn; khai báo rõ tránh mismatch build.
+      - key: NODE_VERSION
+        value: "20"
 
       # Tuỳ chọn: mật khẩu đăng nhập dự phòng qua env (không bật gợi ý trên UI trừ khi AUTH_DEMO_HINTS=1)
       - key: DEMO_AUTH_ADMIN_PASSWORD
