@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+id_ed25519
+id_ed25519.pub
+.ssh/
 
 # debug
 npm-debug.log*
