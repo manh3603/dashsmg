@@ -54,10 +54,10 @@ export default function MiniAudioPlayer() {
   };
 
   return (
-    <div className="border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+    <div className="border-t border-violet-900/40 bg-gradient-to-r from-zinc-950 via-violet-950/90 to-zinc-950 px-4 py-3 shadow-[0_-8px_32px_rgba(0,0,0,0.45)]">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4">
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
-          <Music className="h-4 w-4 shrink-0 text-cyan-600" />
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-violet-700/50 bg-black/30 px-3 py-2 text-sm text-slate-300 hover:bg-violet-950/40">
+          <Music className="h-4 w-4 shrink-0 text-fuchsia-400" />
           <span>{fileName ? "Đổi file" : "Thử nghe file tải lên"}</span>
           <input type="file" accept="audio/wav,audio/flac,audio/mpeg,audio/*" className="hidden" onChange={onPickFile} />
         </label>
@@ -75,7 +75,7 @@ export default function MiniAudioPlayer() {
               <button
                 type="button"
                 aria-label="Tua lại 5s"
-                className="rounded p-1.5 text-slate-500 hover:bg-slate-100"
+                className="rounded p-1.5 text-slate-400 hover:bg-white/10"
                 onClick={() => {
                   const el = audioRef.current;
                   if (el) el.currentTime = Math.max(0, el.currentTime - 5);
@@ -86,7 +86,7 @@ export default function MiniAudioPlayer() {
               <button
                 type="button"
                 aria-label={playing ? "Tạm dừng" : "Phát"}
-                className="rounded-full bg-cyan-600 p-2 text-white hover:bg-cyan-700"
+                className="rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 p-2 text-white hover:from-violet-500 hover:to-fuchsia-500"
                 onClick={toggle}
               >
                 {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 pl-0.5" />}
@@ -94,7 +94,7 @@ export default function MiniAudioPlayer() {
               <button
                 type="button"
                 aria-label="Tua tới 5s"
-                className="rounded p-1.5 text-slate-500 hover:bg-slate-100"
+                className="rounded p-1.5 text-slate-400 hover:bg-white/10"
                 onClick={() => {
                   const el = audioRef.current;
                   if (el) el.currentTime = Math.min(el.duration || 0, el.currentTime + 5);
@@ -102,11 +102,11 @@ export default function MiniAudioPlayer() {
               >
                 <SkipForward className="h-4 w-4" />
               </button>
-              <span className="text-xs tabular-nums text-slate-500">
+              <span className="text-xs tabular-nums text-slate-400">
                 {fmt(current)} / {fmt(duration)}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-slate-400">
               <Volume2 className="h-4 w-4" />
               <input
                 type="range"
@@ -115,16 +115,16 @@ export default function MiniAudioPlayer() {
                 step={0.05}
                 value={volume}
                 onChange={(e) => setVolume(Number(e.target.value))}
-                className="h-1 w-24 accent-cyan-600"
+                className="h-1 w-24 accent-violet-500"
               />
             </div>
-            <p className="max-w-[200px] truncate text-xs text-slate-500" title={fileName ?? ""}>
+            <p className="max-w-[200px] truncate text-xs text-slate-400" title={fileName ?? ""}>
               {fileName}
             </p>
           </>
         )}
         {!url && (
-          <p className="text-xs text-slate-400">Chọn file WAV/FLAC/MP3 để nghe thử trước khi gửi duyệt.</p>
+          <p className="text-xs text-slate-500">Chọn file WAV/FLAC/MP3 để nghe thử trước khi gửi duyệt.</p>
         )}
       </div>
     </div>

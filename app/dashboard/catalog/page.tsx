@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ArrowUpDown, Trash2, X } from "lucide-react";
+import { Search, ArrowUpDown, Trash2, X, Ban } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { CatalogItem, ReleaseStatus } from "@/lib/smg-storage";
-import { getCatalog, removeCatalogItem } from "@/lib/smg-storage";
+import { getCatalog, removeCatalogItem, updateCatalogStatus } from "@/lib/smg-storage";
 import { catalogItemToDisplayTable } from "@/lib/catalog-table";
 
 const filters: { key: "all" | ReleaseStatus; label: string }[] = [
@@ -14,6 +14,7 @@ const filters: { key: "all" | ReleaseStatus; label: string }[] = [
   { key: "sent_to_stores", label: "Đang đẩy CH" },
   { key: "pending", label: "Chờ (cũ)" },
   { key: "live", label: "Trực tiếp" },
+  { key: "takedown", label: "Takedown" },
   { key: "rejected", label: "Đã từ chối" },
   { key: "draft", label: "Bản nháp" },
 ];
@@ -29,6 +30,10 @@ function canDeleteFromCatalog(status: ReleaseStatus): boolean {
   return status !== "live";
 }
 
+function canRequestTakedown(status: ReleaseStatus): boolean {
+  return status === "live" || status === "sent_to_stores";
+}
+
 export default function CatalogPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof filters)[number]["key"]>("all");
@@ -36,6 +41,8 @@ export default function CatalogPage() {
   const [list, setList] = useState<CatalogItem[]>([]);
   const [detail, setDetail] = useState<CatalogItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CatalogItem | null>(null);
+  const [takedownTarget, setTakedownTarget] = useState<CatalogItem | null>(null);
+  const [takedownNote, setTakedownNote] = useState("");
 
   const reload = useCallback(() => setList(getCatalog()), []);
 
@@ -152,6 +159,20 @@ export default function CatalogPage() {
                           Sửa &amp; gửi lại
                         </Link>
                       )}
+                      {canRequestTakedown(r.status) && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-zinc-700 hover:underline"
+                          title="Yêu cầu gỡ khỏi cửa hàng"
+                          onClick={() => {
+                            setTakedownNote("");
+                            setTakedownTarget(r);
+                          }}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          Takedown
+                        </button>
+                      )}
                       {canDeleteFromCatalog(r.status) && (
                         <button
                           type="button"
@@ -214,6 +235,19 @@ export default function CatalogPage() {
                   Sửa &amp; gửi lại QC
                 </Link>
               )}
+              {canRequestTakedown(detail.status) && (
+                <button
+                  type="button"
+                  className="rounded-lg border border-zinc-300 bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200"
+                  onClick={() => {
+                    setTakedownNote("");
+                    setTakedownTarget(detail);
+                    setDetail(null);
+                  }}
+                >
+                  Takedown (gỡ cửa hàng)
+                </button>
+              )}
               {canDeleteFromCatalog(detail.status) && (
                 <button
                   type="button"
@@ -232,6 +266,57 @@ export default function CatalogPage() {
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {takedownTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/45"
+            aria-label="Đóng"
+            onClick={() => setTakedownTarget(null)}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Takedown — gỡ khỏi cửa hàng?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              «{takedownTarget.title}» sẽ chuyển trạng thái <strong className="font-medium">Takedown</strong> và đồng bộ backend. Xử lý thực tế trên DSP theo quy trình đối tác.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="takedown-note">
+              Ghi chú (tuỳ chọn)
+            </label>
+            <textarea
+              id="takedown-note"
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-violet-500 focus:ring-2"
+              placeholder="Ví dụ: yêu cầu gỡ theo email…"
+              value={takedownNote}
+              onChange={(e) => setTakedownNote(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setTakedownTarget(null)}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                onClick={() => {
+                  const note = takedownNote.trim();
+                  updateCatalogStatus(takedownTarget.id, "takedown", {
+                    qcFeedback: note || "Yêu cầu takedown / gỡ khỏi cửa hàng",
+                  });
+                  setTakedownTarget(null);
+                  reload();
+                }}
+              >
+                Xác nhận takedown
               </button>
             </div>
           </div>

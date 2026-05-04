@@ -8,12 +8,24 @@ import { writeErnFile } from "./ddex/buildErn.js";
 import { writeCisDdexBundle, streamCisZipToResponse } from "./ddex/cisBundle.js";
 import { loadCisRecipients } from "./ddex/cisParties.js";
 import { deliverCisRelease } from "./delivery/deliverRelease.js";
-import { listCisDeliveryConfigured } from "./delivery/cisEnv.js";
+import { cisStoreDisplayName, listCisDeliveryConfigured } from "./delivery/cisEnv.js";
+import { fetchPartnerAnalyticsReport } from "./analyticsPartnerReport.js";
 import { isSftpDeliveryConfigured } from "./delivery/sftpEnv.js";
 import { catalogItemToTable, tableToMatrix } from "./releaseTable.js";
 import { mountUploads } from "./uploads.js";
 import { identifyFromAudioUrl, isAcrConfigured } from "./acrcloud/identify.js";
-import { listDemoAccountHints, tryDemoLogin } from "./auth/demoLogin.js";
+import { listDemoAccountHints } from "./auth/demoLogin.js";
+import { tryAuthLogin } from "./auth/login.js";
+import {
+  createFirstPlatformAdmin,
+  createStoredAccount,
+  deleteStoredAccount,
+  listPublicAccounts,
+  upsertStoredAccountAdmin,
+} from "./accountsStore.js";
+import { allocateNextIsrc } from "./isrcAllocator.js";
+import { getBearerToken, issueSession, resolveSession, revokeSession } from "./sessionsStore.js";
+import { deleteDeal, listDeals, upsertDeal } from "./dealsStore.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -35,11 +47,21 @@ app.use(
 mountUploads(app);
 app.use(express.json({ limit: "10mb" }));
 
-/** Gợi ý tài khoản demo (không lộ mật khẩu). */
+/** Bật gợi ý tài khoản env (DEMO_AUTH_*) chỉ khi AUTH_DEMO_HINTS=1 — production không bật. */
+function demoHintsEnabled(): boolean {
+  const v = String(process.env.AUTH_DEMO_HINTS ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** Gợi ý tài khoản dev (không lộ mật khẩu). Mặc định tắt; bật bằng AUTH_DEMO_HINTS=1. */
 app.get("/api/auth/demo-hints", (_req, res) => {
+  if (!demoHintsEnabled()) {
+    res.json({ accounts: [], note: undefined });
+    return;
+  }
   res.json({
     accounts: listDemoAccountHints(),
-    note: "Mật khẩu chỉ trong backend/.env: DEMO_AUTH_ADMIN_PASSWORD, DEMO_AUTH_LABEL_PASSWORD, DEMO_AUTH_ARTIST_PASSWORD (bắt buộc — không dùng mặc định trong mã).",
+    note: "Chỉ dùng khi phát triển. Production: đăng ký / quản trị tài khoản trên server (data/accounts.json). Mật khẩu env: DEMO_AUTH_* trong backend/.env nếu bật gợi ý.",
   });
 });
 
@@ -54,17 +76,264 @@ app.get("/api/auth/login", (_req, res) => {
 app.post("/api/auth/login", (req, res) => {
   const login = typeof (req.body as { login?: string })?.login === "string" ? String((req.body as { login: string }).login) : "";
   const password = typeof (req.body as { password?: string })?.password === "string" ? String((req.body as { password: string }).password) : "";
-  const result = tryDemoLogin(login, password);
+  const result = tryAuthLogin(login, password);
   if (!result) {
     res.status(401).json({ error: "Sai tên đăng nhập hoặc mật khẩu." });
     return;
   }
+  const sessionToken = issueSession(result.login, result.role, result.displayName);
   res.json({
     ok: true,
     role: result.role,
     displayName: result.displayName,
     login: result.login,
+    sessionToken,
   });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const tok = getBearerToken(req.headers.authorization);
+  revokeSession(tok);
+  res.json({ ok: true });
+});
+
+/** Đăng ký công khai: nghệ sĩ hoặc admin nhãn (customer_admin). */
+app.post("/api/auth/register", (req, res) => {
+  const b = req.body as {
+    login?: string;
+    password?: string;
+    displayName?: string;
+    accountType?: string;
+    orgLabel?: string;
+  };
+  const login = typeof b.login === "string" ? b.login : "";
+  const password = typeof b.password === "string" ? b.password : "";
+  const displayName = typeof b.displayName === "string" ? b.displayName : "";
+  const accountType = typeof b.accountType === "string" ? b.accountType : "";
+  const orgLabel = typeof b.orgLabel === "string" ? b.orgLabel : "";
+  const role = accountType === "label" ? "customer_admin" : "artist";
+  if (accountType !== "artist" && accountType !== "label") {
+    res.status(400).json({ error: "accountType phải là artist hoặc label." });
+    return;
+  }
+  const created = createStoredAccount({
+    login,
+    password,
+    role,
+    displayName,
+    orgLabel: accountType === "label" ? orgLabel : undefined,
+  });
+  if (!created.ok) {
+    res.status(400).json({ error: created.error });
+    return;
+  }
+  const row = tryAuthLogin(login, password);
+  if (!row) {
+    res.status(500).json({ error: "Đã tạo tài khoản nhưng không đăng nhập được — liên hệ quản trị." });
+    return;
+  }
+  const sessionToken = issueSession(row.login, row.role, row.displayName);
+  res.json({
+    ok: true,
+    role: row.role,
+    displayName: row.displayName,
+    login: row.login,
+    sessionToken,
+  });
+});
+
+/**
+ * Tạo quản trị nền tảng đầu tiên (một lần), khi chưa có platform_admin trong data/accounts.json.
+ * Cần AUTH_BOOTSTRAP_SECRET trong backend/.env trùng với body.bootstrapSecret.
+ */
+app.post("/api/auth/bootstrap-first-admin", (req, res) => {
+  const secret = process.env.AUTH_BOOTSTRAP_SECRET?.trim();
+  if (!secret) {
+    res.status(503).json({ error: "Chưa bật AUTH_BOOTSTRAP_SECRET trên server." });
+    return;
+  }
+  const b = req.body as { bootstrapSecret?: string; login?: string; password?: string; displayName?: string };
+  if (typeof b.bootstrapSecret !== "string" || b.bootstrapSecret !== secret) {
+    res.status(403).json({ error: "Không hợp lệ." });
+    return;
+  }
+  const out = createFirstPlatformAdmin({
+    login: typeof b.login === "string" ? b.login : "",
+    password: typeof b.password === "string" ? b.password : "",
+    displayName: typeof b.displayName === "string" ? b.displayName : "",
+  });
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  const login = typeof b.login === "string" ? b.login.trim() : "";
+  const password = typeof b.password === "string" ? b.password : "";
+  const row = tryAuthLogin(login, password);
+  if (!row) {
+    res.status(500).json({ error: "Đã tạo nhưng không xác thực được." });
+    return;
+  }
+  const sessionToken = issueSession(row.login, row.role, row.displayName);
+  res.json({ ok: true, role: row.role, displayName: row.displayName, login: row.login, sessionToken });
+});
+
+function requirePlatformAdminSession(req: import("express").Request, res: import("express").Response) {
+  const tok = getBearerToken(req.headers.authorization);
+  const s = resolveSession(tok);
+  if (!s || s.role !== "platform_admin") {
+    res.status(403).json({ error: "Cần phiên quản trị nền tảng (Bearer sessionToken sau đăng nhập)." });
+    return null;
+  }
+  return s;
+}
+
+/** Phân tích / báo cáo — admin nền tảng hoặc admin nhãn (cùng quyền xem trang Analytics). */
+function requireFinancialReportsSession(req: import("express").Request, res: import("express").Response) {
+  const tok = getBearerToken(req.headers.authorization);
+  const s = resolveSession(tok);
+  if (!s) {
+    res.status(401).json({ error: "Cần đăng nhập (Authorization: Bearer sessionToken)." });
+    return null;
+  }
+  if (s.role !== "platform_admin" && s.role !== "customer_admin") {
+    res.status(403).json({ error: "Chỉ quản trị nền tảng hoặc admin nhãn mới xem được ngữ cảnh phân tích." });
+    return null;
+  }
+  return s;
+}
+
+app.post("/api/admin/account-list", (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
+  res.json({ accounts: listPublicAccounts() });
+});
+
+app.post("/api/admin/account-upsert", (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
+  const b = req.body as {
+    login?: string;
+    password?: string;
+    displayName?: string;
+    role?: string;
+    orgLabel?: string;
+    royaltySharePercent?: number | null;
+  };
+  const login = typeof b.login === "string" ? b.login : "";
+  if (!login.trim()) {
+    res.status(400).json({ error: "Thiếu login." });
+    return;
+  }
+  const role = b.role === "customer_admin" || b.role === "platform_admin" || b.role === "artist" ? b.role : null;
+  if (!role) {
+    res.status(400).json({ error: "role không hợp lệ." });
+    return;
+  }
+  const out = upsertStoredAccountAdmin({
+    login,
+    password: typeof b.password === "string" ? b.password : undefined,
+    displayName: typeof b.displayName === "string" ? b.displayName : login,
+    role,
+    orgLabel: typeof b.orgLabel === "string" ? b.orgLabel : undefined,
+    royaltySharePercent: b.royaltySharePercent,
+  });
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, accounts: listPublicAccounts() });
+});
+
+app.post("/api/admin/account-delete", (req, res) => {
+  const sess = requirePlatformAdminSession(req, res);
+  if (!sess) return;
+  const b = req.body as { targetLogin?: string };
+  const target = typeof b.targetLogin === "string" ? b.targetLogin.trim() : "";
+  if (!target) {
+    res.status(400).json({ error: "Thiếu targetLogin." });
+    return;
+  }
+  if (target.toLowerCase() === sess.login.toLowerCase()) {
+    res.status(400).json({ error: "Không thể tự xóa chính mình qua API này." });
+    return;
+  }
+  const out = deleteStoredAccount(target);
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, accounts: listPublicAccounts() });
+});
+
+/** Hợp đồng / deal đối tác — chỉ quản trị nền tảng. */
+app.post("/api/admin/deals/list", (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
+  res.json({ deals: listDeals() });
+});
+
+app.post("/api/admin/deals/upsert", (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
+  const b = req.body as {
+    id?: string;
+    partnerName?: string;
+    contractRef?: string;
+    territory?: string;
+    revenueTerms?: string;
+    validFrom?: string;
+    validTo?: string;
+    contactEmail?: string;
+    notes?: string;
+    reportingStores?: string;
+    status?: string;
+  };
+  const out = upsertDeal({
+    id: typeof b.id === "string" ? b.id : undefined,
+    partnerName: typeof b.partnerName === "string" ? b.partnerName : "",
+    contractRef: typeof b.contractRef === "string" ? b.contractRef : undefined,
+    territory: typeof b.territory === "string" ? b.territory : undefined,
+    revenueTerms: typeof b.revenueTerms === "string" ? b.revenueTerms : undefined,
+    validFrom: typeof b.validFrom === "string" ? b.validFrom : undefined,
+    validTo: typeof b.validTo === "string" ? b.validTo : undefined,
+    contactEmail: typeof b.contactEmail === "string" ? b.contactEmail : undefined,
+    notes: typeof b.notes === "string" ? b.notes : undefined,
+    reportingStores: typeof b.reportingStores === "string" ? b.reportingStores : undefined,
+    status: b.status === "active" || b.status === "archived" || b.status === "draft" ? b.status : undefined,
+  });
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, deals: listDeals(), deal: out.deal });
+});
+
+app.post("/api/admin/deals/delete", (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
+  const b = req.body as { id?: string };
+  const id = typeof b.id === "string" ? b.id.trim() : "";
+  if (!id) {
+    res.status(400).json({ error: "Thiếu id." });
+    return;
+  }
+  const out = deleteDeal(id);
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, deals: listDeals() });
+});
+
+/** Cấp ISRC tiếp theo trong dải đã cấu hình — cần phiên đăng nhập bất kỳ. */
+app.post("/api/isrc/next", (req, res) => {
+  const tok = getBearerToken(req.headers.authorization);
+  const s = resolveSession(tok);
+  if (!s) {
+    res.status(401).json({ error: "Cần đăng nhập (Authorization: Bearer sessionToken)." });
+    return;
+  }
+  const out = allocateNextIsrc();
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, isrc: out.isrc });
 });
 
 function senderOpts() {
@@ -107,6 +376,9 @@ function parseCatalogBody(body: Record<string, unknown>): import("./types.js").C
 }
 
 app.get("/health", (_req, res) => {
+  const analyticsFeed = ["1", "true", "yes"].includes(String(process.env.ANALYTICS_FEED_ENABLED ?? "").trim().toLowerCase());
+  const analyticsPartnerReport = Boolean(process.env.ANALYTICS_PARTNER_REPORT_URL?.trim());
+  const analyticsReportMock = ["1", "true", "yes"].includes(String(process.env.ANALYTICS_REPORT_MOCK ?? "").trim().toLowerCase());
   res.json({
     ok: true,
     service: "smg-distribution-backend",
@@ -114,6 +386,76 @@ app.get("/health", (_req, res) => {
     uploadApi: true,
     /** ACRCloud Identify — QC nhận diện bản ghi từ URL audio */
     acrIdentify: isAcrConfigured(),
+    /** Bật ANALYTICS_FEED_ENABLED=1 khi đã nối feed báo cáo DSP — frontend hiển thị khu phân tích */
+    analyticsFeed,
+    /** Đã đặt ANALYTICS_PARTNER_REPORT_URL — Dashboard gọi POST /api/analytics/report để lấy stream theo store */
+    analyticsPartnerReport,
+    /** ANALYTICS_REPORT_MOCK=1 — trả dữ liệu mẫu cho trang Phân tích */
+    analyticsReportMock,
+  });
+});
+
+/** Ngữ cảnh phân tích đa deal / đa cửa hàng — cần phiên (Dashboard → Analytics). */
+app.post("/api/analytics/context", (req, res) => {
+  if (!requireFinancialReportsSession(req, res)) return;
+  const analyticsFeed = ["1", "true", "yes"].includes(String(process.env.ANALYTICS_FEED_ENABLED ?? "").trim().toLowerCase());
+  const cisStores = listCisDeliveryConfigured().map(({ storeKey, hasEndpoint }) => ({
+    storeKey,
+    label: cisStoreDisplayName(storeKey),
+    hasEndpoint,
+  }));
+  const deals = listDeals().map((d) => ({
+    id: d.id,
+    partnerName: d.partnerName,
+    status: d.status,
+    territory: d.territory ?? null,
+    reportingStores:
+      d.reportingStores?.trim().length
+        ? d.reportingStores
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
+  }));
+  const activeDeals = deals.filter((x) => x.status === "active");
+  const reportingTags = new Set<string>();
+  for (const d of activeDeals) {
+    for (const t of d.reportingStores) reportingTags.add(t);
+  }
+  res.json({
+    analyticsFeed,
+    cisStores,
+    deals,
+    activeDealCount: activeDeals.length,
+    /** Gộp mọi nhãn «cửa hàng báo cáo» từ deal đang active — map tới job ingest / slice biểu đồ. */
+    activeReportingStoreTags: [...reportingTags],
+  });
+});
+
+/** Báo cáo stream theo cửa hàng — backend gọi URL đối tác (ANALYTICS_PARTNER_REPORT_URL). */
+app.post("/api/analytics/report", async (req, res) => {
+  if (!requireFinancialReportsSession(req, res)) return;
+  const r = await fetchPartnerAnalyticsReport();
+  if (!r.configured) {
+    res.json({ ok: true, configured: false, fetchOk: false, stores: [] });
+    return;
+  }
+  if (!r.fetchOk) {
+    res.json({
+      ok: true,
+      configured: true,
+      fetchOk: false,
+      stores: [],
+      error: r.error ?? "Lỗi không xác định",
+    });
+    return;
+  }
+  res.json({
+    ok: true,
+    configured: true,
+    fetchOk: true,
+    stores: r.stores,
+    asOf: r.asOf,
   });
 });
 
@@ -153,7 +495,15 @@ app.post("/api/releases/bulk", (req, res) => {
 
 app.patch("/api/releases/:id/status", (req, res) => {
   const body = req.body as { status?: string; qcFeedback?: string | null };
-  const allowed: CatalogItem["status"][] = ["draft", "pending_qc", "rejected", "sent_to_stores", "live", "pending"];
+  const allowed: CatalogItem["status"][] = [
+    "draft",
+    "pending_qc",
+    "rejected",
+    "sent_to_stores",
+    "live",
+    "takedown",
+    "pending",
+  ];
   if (!body.status || !allowed.includes(body.status as CatalogItem["status"])) {
     res.status(400).json({ error: "status không hợp lệ" });
     return;

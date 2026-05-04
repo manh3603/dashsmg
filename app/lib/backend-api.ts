@@ -147,6 +147,12 @@ export type BackendHealthPayload = {
   ok?: boolean;
   uploadApi?: boolean;
   acrIdentify?: boolean;
+  /** Backend báo đã bật nối feed phân tích (ANALYTICS_FEED_ENABLED). */
+  analyticsFeed?: boolean;
+  /** Đã cấu hình URL báo cáo đối tác (ANALYTICS_PARTNER_REPORT_URL). */
+  analyticsPartnerReport?: boolean;
+  /** ANALYTICS_REPORT_MOCK=1 — backend trả stream mẫu. */
+  analyticsReportMock?: boolean;
 };
 
 /** Health chi tiết (acrIdentify = backend đã cấu ACRCloud). */
@@ -154,6 +160,8 @@ export type AuthLoginResponse = {
   role: import("@/lib/smg-storage").AccountRole;
   displayName: string;
   login: string;
+  /** Phiên Bearer cho API (ISRC, quản trị tài khoản…). */
+  sessionToken?: string;
 };
 
 export type DemoAccountHint = {
@@ -163,7 +171,7 @@ export type DemoAccountHint = {
   label: string;
 };
 
-/** Đăng nhập demo — mật khẩu chỉ kiểm tra trên backend. */
+/** Đăng nhập — mật khẩu kiểm tra trên backend (tài khoản lưu file + tuỳ chọn DEMO_AUTH_*). */
 export async function postAuthLogin(
   login: string,
   password: string
@@ -187,6 +195,7 @@ export async function postAuthLogin(
       role?: AuthLoginResponse["role"];
       displayName?: string;
       login?: string;
+      sessionToken?: string;
       error?: string;
     };
     if (!res.ok) {
@@ -197,7 +206,12 @@ export async function postAuthLogin(
     }
     return {
       ok: true,
-      data: { role: data.role, displayName: data.displayName, login: data.login },
+      data: {
+        role: data.role,
+        displayName: data.displayName,
+        login: data.login,
+        sessionToken: typeof data.sessionToken === "string" ? data.sessionToken : undefined,
+      },
     };
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
@@ -212,6 +226,345 @@ export async function postAuthLogin(
       };
     }
     return { ok: false, error: raw || "Lỗi mạng" };
+  }
+}
+
+export async function postAuthLogout(sessionToken: string): Promise<void> {
+  const base = baseUrl();
+  if (!base || !sessionToken.trim()) return;
+  try {
+    await fetch(`${base}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken.trim()}` },
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function postAuthRegister(body: {
+  login: string;
+  password: string;
+  displayName: string;
+  accountType: "artist" | "label";
+  orgLabel?: string;
+}): Promise<{ ok: true; data: AuthLoginResponse } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) {
+    return { ok: false, error: "Chưa xác định được URL API." };
+  }
+  try {
+    const res = await fetch(`${base}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      role?: AuthLoginResponse["role"];
+      displayName?: string;
+      login?: string;
+      sessionToken?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.role || !data.displayName || data.login == null) {
+      return { ok: false, error: data.error || "Đăng ký thất bại." };
+    }
+    return {
+      ok: true,
+      data: {
+        role: data.role,
+        displayName: data.displayName,
+        login: data.login,
+        sessionToken: typeof data.sessionToken === "string" ? data.sessionToken : undefined,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export type ServerStoredAccount = {
+  id: string;
+  login: string;
+  role: import("@/lib/smg-storage").AccountRole;
+  displayName: string;
+  orgLabel?: string;
+  royaltySharePercent?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function postAdminAccountList(
+  sessionToken: string
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/account-list`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({}),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAdminAccountUpsert(
+  sessionToken: string,
+  user: {
+    login: string;
+    password?: string;
+    displayName: string;
+    role: import("@/lib/smg-storage").AccountRole;
+    orgLabel?: string;
+    royaltySharePercent?: number | null;
+  }
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/account-upsert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify(user),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAdminAccountDelete(
+  sessionToken: string,
+  targetLogin: string
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/account-delete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({ targetLogin }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export type PartnerDealRow = {
+  id: string;
+  partnerName: string;
+  contractRef?: string;
+  territory?: string;
+  revenueTerms?: string;
+  validFrom?: string;
+  validTo?: string;
+  contactEmail?: string;
+  notes?: string;
+  /** CSV cửa hàng / kênh báo cáo gắn deal — phục vụ phân tích đa nguồn. */
+  reportingStores?: string;
+  status: "draft" | "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AnalyticsCisStoreRow = { storeKey: string; label: string; hasEndpoint: boolean };
+
+export type AnalyticsDealRosterRow = {
+  id: string;
+  partnerName: string;
+  status: PartnerDealRow["status"];
+  territory: string | null;
+  reportingStores: string[];
+};
+
+/** POST /api/analytics/context — đa deal + cửa hàng CIS (cần Bearer). */
+export type AnalyticsContextPayload = {
+  analyticsFeed: boolean;
+  cisStores: AnalyticsCisStoreRow[];
+  deals: AnalyticsDealRosterRow[];
+  activeDealCount: number;
+  activeReportingStoreTags: string[];
+};
+
+export type AnalyticsReportStoreRow = { storeName: string; streams: number; storeKey?: string };
+
+export type AnalyticsReportPayload = {
+  configured: boolean;
+  fetchOk: boolean;
+  stores: AnalyticsReportStoreRow[];
+  asOf?: string;
+  error?: string;
+};
+
+/** Stream theo cửa hàng — backend proxy tới ANALYTICS_PARTNER_REPORT_URL. */
+export async function postAnalyticsReport(
+  sessionToken: string
+): Promise<{ ok: true; data: AnalyticsReportPayload } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/analytics/report`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({}),
+    });
+    const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) return { ok: false, error: (typeof raw.error === "string" ? raw.error : null) || res.statusText };
+    if (raw.ok === false) return { ok: false, error: (typeof raw.error === "string" ? raw.error : null) || "Phản hồi không hợp lệ" };
+    return {
+      ok: true,
+      data: {
+        configured: Boolean(raw.configured),
+        fetchOk: Boolean(raw.fetchOk),
+        stores: Array.isArray(raw.stores) ? (raw.stores as AnalyticsReportStoreRow[]) : [],
+        asOf: typeof raw.asOf === "string" ? raw.asOf : undefined,
+        error: typeof raw.error === "string" ? raw.error : undefined,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAnalyticsContext(
+  sessionToken: string
+): Promise<{ ok: true; data: AnalyticsContextPayload } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/analytics/context`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({}),
+    });
+    const data = (await res.json().catch(() => ({}))) as AnalyticsContextPayload & { error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return {
+      ok: true,
+      data: {
+        analyticsFeed: Boolean(data.analyticsFeed),
+        cisStores: Array.isArray(data.cisStores) ? data.cisStores : [],
+        deals: Array.isArray(data.deals) ? data.deals : [],
+        activeDealCount: typeof data.activeDealCount === "number" ? data.activeDealCount : 0,
+        activeReportingStoreTags: Array.isArray(data.activeReportingStoreTags) ? data.activeReportingStoreTags : [],
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAdminDealsList(
+  sessionToken: string
+): Promise<{ ok: true; deals: PartnerDealRow[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/deals/list`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({}),
+    });
+    const data = (await res.json().catch(() => ({}))) as { deals?: PartnerDealRow[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, deals: data.deals ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAdminDealUpsert(
+  sessionToken: string,
+  deal: Partial<PartnerDealRow> & { partnerName: string }
+): Promise<{ ok: true; deals: PartnerDealRow[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/deals/upsert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify(deal),
+    });
+    const data = (await res.json().catch(() => ({}))) as { deals?: PartnerDealRow[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, deals: data.deals ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postAdminDealDelete(
+  sessionToken: string,
+  id: string
+): Promise<{ ok: true; deals: PartnerDealRow[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/admin/deals/delete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({ id }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { deals?: PartnerDealRow[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, deals: data.deals ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postIsrcNext(
+  sessionToken: string
+): Promise<{ ok: true; isrc: string } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/isrc/next`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; isrc?: string; error?: string };
+    if (!res.ok || !data.isrc) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, isrc: data.isrc };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
   }
 }
 

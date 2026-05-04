@@ -23,7 +23,7 @@ export function canAccessStoreCms(role: AccountRole | null): boolean {
   return role === "platform_admin";
 }
 
-/** Quản lý danh sách tài khoản (demo localStorage) — chỉ admin nền tảng. */
+/** Quản lý danh sách tài khoản trên API — chỉ admin nền tảng. */
 export function canManageAccounts(role: AccountRole | null): boolean {
   return role === "platform_admin";
 }

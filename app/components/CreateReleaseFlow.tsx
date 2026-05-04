@@ -14,10 +14,17 @@ import {
   FileText,
   ChevronRight,
 } from "lucide-react";
-import { getActiveStoreOptions, getCatalogItemById, resubmitReleaseToQC, submitReleaseToQC } from "@/lib/smg-storage";
+import {
+  getActiveStoreOptions,
+  getApiSessionToken,
+  getCatalogItemById,
+  resubmitReleaseToQC,
+  submitReleaseToQC,
+} from "@/lib/smg-storage";
 import {
   isBackendConfigured,
   postCisDeliveryPush,
+  postIsrcNext,
   pushCatalogItemToBackend,
   uploadReleaseAsset,
   type ReleaseTableRow,
@@ -53,6 +60,10 @@ export default function CreateReleaseFlow() {
   const editId = searchParams.get("edit")?.trim() || null;
   const audioInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  /** Một lần tự cấp ISRC cho mỗi (editId + bước 4); reset khi lùi khỏi bước 4. */
+  const lastIsrcAutoKeyRef = useRef<string | null>(null);
+  /** Bài mới + Single: cấp ISRC ngay khi chọn loại (không chờ bước 4). */
+  const earlyNewSingleIsrcRef = useRef<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
@@ -116,6 +127,56 @@ export default function CreateReleaseFlow() {
         return true;
     }
   }, [currentStep, releaseKind, formData]);
+
+  useEffect(() => {
+    if (currentStep < 4) {
+      lastIsrcAutoKeyRef.current = null;
+    }
+  }, [currentStep]);
+
+  useEffect(() => {
+    if (editId) return;
+    if (releaseKind !== "single") {
+      earlyNewSingleIsrcRef.current = null;
+      return;
+    }
+    if (formData.isrc.trim()) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const k = "early-new-single";
+    if (earlyNewSingleIsrcRef.current === k) return;
+    earlyNewSingleIsrcRef.current = k;
+    void postIsrcNext(tok).then((r) => {
+      if (!r.ok) {
+        earlyNewSingleIsrcRef.current = null;
+        return;
+      }
+      setFormData((fd) => (fd.isrc.trim() ? fd : { ...fd, isrc: r.isrc }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theo releaseKind / editId; tránh lặp khi gõ ISRC.
+  }, [releaseKind, editId]);
+
+  // Bài đang sửa: bước 4 mới cấp ISRC nếu trống (bài mới đã cấp ở effect «chọn Single»).
+  useEffect(() => {
+    if (currentStep !== 4 || releaseKind !== "single") return;
+    if (!editId) return;
+    if (formData.isrc.trim()) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = `${editId}-step4`;
+    if (lastIsrcAutoKeyRef.current === dedupeKey) return;
+    lastIsrcAutoKeyRef.current = dedupeKey;
+    void postIsrcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastIsrcAutoKeyRef.current = null;
+        return;
+      }
+      setFormData((fd) => (fd.isrc.trim() ? fd : { ...fd, isrc: r.isrc }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
 
   useEffect(() => {
     const syncStores = () => {
@@ -216,6 +277,25 @@ export default function CreateReleaseFlow() {
       setFormData((fd) => ({ ...fd, audioAssetUrl: r.url! }));
       setAudioFileLabel(file.name);
     }
+  };
+
+  const fetchNextIsrc = async () => {
+    if (!isBackendConfigured()) {
+      setUploadErr("Cần backend để cấp ISRC. Chạy «npm run dev:all» hoặc đăng nhập lại để lấy phiên API.");
+      return;
+    }
+    const tok = getApiSessionToken();
+    if (!tok) {
+      setUploadErr("Đăng xuất và đăng nhập lại để cấp ISRC tự động từ kho hệ thống.");
+      return;
+    }
+    setUploadErr(null);
+    const r = await postIsrcNext(tok);
+    if (!r.ok) {
+      setUploadErr(r.error);
+      return;
+    }
+    setFormData((fd) => ({ ...fd, isrc: r.isrc }));
   };
 
   const runCoverUpload = async (file: File) => {
@@ -713,12 +793,26 @@ export default function CreateReleaseFlow() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  ISRC {releaseKind === "single" ? "*" : ""}
-                </label>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    ISRC {releaseKind === "single" ? "*" : ""}
+                  </label>
+                  {releaseKind === "single" && (
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextIsrc()}
+                      className="text-xs font-medium text-violet-700 underline decoration-violet-300 hover:text-violet-900"
+                    >
+                      Lấy ISRC tiếp theo từ kho (VNE0M26…)
+                    </button>
+                  )}
+                </div>
+                <p className="mb-2 text-xs text-slate-500">
+                  Single: ISRC được cấp tự động ngay khi chọn loại phát hành (bài mới) và bổ sung ở bước này nếu cần — cần đăng nhập có phiên API.
+                </p>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
-                  placeholder="CC-XXX-YY-NNNNN"
+                  placeholder="VNE0M2603000"
                   value={formData.isrc}
                   onChange={(e) => setFormData({ ...formData, isrc: e.target.value })}
                 />

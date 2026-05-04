@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Music, KeyRound, Link2 } from "lucide-react";
 
 type Mode = "choose" | "otp" | "link";
 
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("choose");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -19,14 +21,14 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link href="/" className="flex justify-center text-cyan-600">
+        <Link href="/" className="flex justify-center text-violet-600">
           <Music size={48} />
         </Link>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">Quên mật khẩu</h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Khôi phục bằng OTP hoặc liên kết đặt lại gửi qua email (demo).
+          Khôi phục bằng OTP hoặc liên kết đặt lại qua email khi tổ chức của bạn đã bật dịch vụ thư.
         </p>
       </div>
 
@@ -98,8 +100,8 @@ export default function ForgotPasswordPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => alert("Đã đặt lại mật khẩu (demo). Chuyển đến đăng nhập.")}
-                    className="w-full py-2.5 rounded-md bg-cyan-600 text-white font-medium hover:bg-cyan-700"
+                    onClick={() => router.push("/login")}
+                    className="w-full py-2.5 rounded-md bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-medium hover:from-violet-700 hover:to-fuchsia-700"
                   >
                     Xác nhận đặt lại
                   </button>
@@ -128,7 +130,7 @@ export default function ForgotPasswordPage() {
               </button>
               {sent && (
                 <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-                  Đã gửi email chứa liên kết (demo). Kiểm tra hộp thư và thư mục spam.
+                  Nếu dịch vụ thư đã bật, kiểm tra hộp thư và thư mục spam. Liên hệ quản trị nếu không nhận được.
                 </p>
               )}
               <button type="button" onClick={() => { setMode("choose"); setSent(false); }} className="w-full text-sm text-slate-500 hover:text-slate-800">

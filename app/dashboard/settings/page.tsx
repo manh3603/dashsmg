@@ -87,7 +87,12 @@ export default function SettingsPage() {
               <p className="font-medium text-slate-900">Bảo mật 2 lớp (2FA)</p>
               <p className="text-sm text-slate-500">Ứng dụng xác thực (TOTP) hoặc SMS</p>
             </div>
-            <button type="button" className="rounded-lg border border-cyan-600 px-4 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50" onClick={() => alert("Bật 2FA (demo)")}>
+            <button
+              type="button"
+              disabled
+              title="Tính năng TOTP/SMS đang lên lịch triển khai."
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-400 cursor-not-allowed"
+            >
               Kích hoạt
             </button>
           </div>

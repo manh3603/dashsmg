@@ -6,6 +6,7 @@ export type ReleaseStatus =
   | "rejected"
   | "sent_to_stores"
   | "live"
+  | "takedown"
   | "pending";
 
 export type CatalogItem = {

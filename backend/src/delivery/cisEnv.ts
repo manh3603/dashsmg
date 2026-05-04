@@ -51,6 +51,18 @@ export function getCisDeliveryConfig(storeKey: CisStoreKey): CisDeliveryHttpConf
   return { url, headers, bodyMode };
 }
 
+const CIS_STORE_DISPLAY: Record<CisStoreKey, string> = {
+  vk_music: "VK Music",
+  yandex_music: "Yandex Music",
+  zvuk: "ZVUK",
+  kion_music: "Kion Music",
+  zing_mp3: "Zing MP3",
+};
+
+export function cisStoreDisplayName(storeKey: CisStoreKey): string {
+  return CIS_STORE_DISPLAY[storeKey] ?? storeKey;
+}
+
 export function listCisDeliveryConfigured(): { storeKey: CisStoreKey; hasEndpoint: boolean }[] {
   const keys: CisStoreKey[] = ["vk_music", "yandex_music", "zvuk", "kion_music", "zing_mp3"];
   return keys.map((storeKey) => ({

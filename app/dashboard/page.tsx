@@ -47,6 +47,16 @@ function buildNotifications(catalog: CatalogItem[]): Notif[] {
         body: `«${r.title}» đang trong luồng gửi metadata.`,
         href: "/dashboard/catalog",
       });
+    } else if (r.status === "takedown") {
+      const note = r.qcFeedback?.trim();
+      out.push({
+        id: `td-${r.id}`,
+        title: "Takedown",
+        body: note
+          ? `«${r.title}» — ${note}`
+          : `«${r.title}» — đánh dấu takedown / gỡ cửa hàng.`,
+        href: "/dashboard/catalog",
+      });
     } else if (r.status === "live") {
       out.push({
         id: `live-${r.id}`,
@@ -130,23 +140,22 @@ export default function DashboardOverview() {
     [catalog]
   );
 
-  /** Placeholder — thay bằng API cửa hàng khi tích hợp */
   const chartData = useMemo(() => [] as { name: string; streams: number }[], []);
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Trang chủ</h1>
-        <p className="mt-1 text-slate-600">Tổng quan từ kho phát hành; stream/doanh thu sẽ cập nhật khi cửa hàng trả báo cáo</p>
+        <p className="mt-1 text-slate-600">Tổng quan từ kho phát hành; stream và doanh thu cập nhật khi tích hợp báo cáo DSP.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <button
           type="button"
           onClick={() => setInsight("streams")}
-          className="flex w-full items-center rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-cyan-200 hover:shadow-md"
+          className="flex w-full items-center rounded-xl border border-slate-200 bg-white/90 p-6 text-left shadow-sm backdrop-blur-sm transition hover:border-violet-200 hover:shadow-md"
         >
-          <div className="mr-4 rounded-full bg-cyan-100 p-3 text-cyan-600">
+          <div className="mr-4 rounded-full bg-violet-100 p-3 text-violet-600">
             <Headphones size={24} />
           </div>
           <div>
@@ -158,7 +167,7 @@ export default function DashboardOverview() {
         <button
           type="button"
           onClick={() => setInsight("revenue")}
-          className="flex w-full items-center rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md"
+          className="flex w-full items-center rounded-xl border border-slate-200 bg-white/90 p-6 text-left shadow-sm backdrop-blur-sm transition hover:border-emerald-200 hover:shadow-md"
         >
           <div className="mr-4 rounded-full bg-emerald-100 p-3 text-emerald-600">
             <DollarSign size={24} />
@@ -172,7 +181,7 @@ export default function DashboardOverview() {
         <button
           type="button"
           onClick={() => setInsight("tracks")}
-          className="flex w-full items-center rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-violet-200 hover:shadow-md"
+          className="flex w-full items-center rounded-xl border border-slate-200 bg-white/90 p-6 text-left shadow-sm backdrop-blur-sm transition hover:border-fuchsia-200 hover:shadow-md"
         >
           <div className="mr-4 rounded-full bg-violet-100 p-3 text-violet-600">
             <Disc size={24} />
@@ -202,9 +211,9 @@ export default function DashboardOverview() {
             <p className="mt-3 text-sm text-slate-600">
               {insight === "tracks"
                 ? `Hiện có ${activeTracks} bản ở trạng thái live hoặc đang đẩy cửa hàng trong kho.`
-                : "Số liệu streams và doanh thu sẽ được nối API / báo cáo từ cửa hàng (deal đối tác). Hiện chưa có feed mẫu."}
+                : "Số liệu streams và doanh thu hiển thị tại đây sau khi nối API hoặc nhập báo cáo từ cửa hàng theo hợp đồng."}
             </p>
-            <Link href="/dashboard/analytics" className="mt-4 inline-block text-sm font-medium text-cyan-600 hover:underline">
+            <Link href="/dashboard/analytics" className="mt-4 inline-block text-sm font-medium text-violet-600 hover:underline">
               Mở trang phân tích
             </Link>
           </div>
@@ -212,7 +221,7 @@ export default function DashboardOverview() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-stretch">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-sm lg:col-span-2">
           <h2 className="text-lg font-semibold text-slate-900">Tăng trưởng luồng — 7 ngày qua</h2>
           <p className="mt-1 text-xs text-slate-500">Dữ liệu từ DSP sau khi tích hợp</p>
           <div className="mt-4 w-full min-w-0">
@@ -227,16 +236,16 @@ export default function DashboardOverview() {
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <Tooltip contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0" }} />
-                  <Line type="monotone" dataKey="streams" stroke="#0891b2" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="streams" stroke="#7c3aed" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}
           </div>
         </div>
 
-        <div className="flex min-h-[280px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex min-h-[280px] flex-col rounded-xl border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-sm">
           <div className="mb-4 flex items-center gap-2">
-            <Bell className="h-5 w-5 shrink-0 text-cyan-600" />
+            <Bell className="h-5 w-5 shrink-0 text-violet-600" />
             <h2 className="text-lg font-semibold text-slate-900">Thông báo</h2>
           </div>
           {showQcLog && qcNotifs.length > 0 && (
@@ -263,10 +272,10 @@ export default function DashboardOverview() {
                       {n.at && (
                         <p className="text-[11px] tabular-nums text-slate-400">{formatViDateTime(n.at)}</p>
                       )}
-                      <p className="text-xs font-medium uppercase tracking-wide text-cyan-600">{n.title}</p>
+                      <p className="text-xs font-medium uppercase tracking-wide text-violet-600">{n.title}</p>
                       <p className="mt-1 text-sm text-slate-600">{n.body}</p>
                       {n.href && (
-                        <Link href={n.href} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-cyan-700 hover:underline">
+                        <Link href={n.href} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline">
                           Mở <ExternalLink className="h-3 w-3" />
                         </Link>
                       )}
@@ -278,7 +287,7 @@ export default function DashboardOverview() {
           </ul>
           <Link
             href="/dashboard/catalog"
-            className="mt-4 flex w-full shrink-0 items-center justify-center gap-1 border-t border-slate-100 pt-4 text-sm font-medium text-cyan-600 hover:text-cyan-700"
+            className="mt-4 flex w-full shrink-0 items-center justify-center gap-1 border-t border-slate-100 pt-4 text-sm font-medium text-violet-600 hover:text-violet-700"
           >
             Kho nhạc
             <ExternalLink className="h-3.5 w-3.5" />

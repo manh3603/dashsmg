@@ -5,11 +5,11 @@ import { Music, Zap, DollarSign, ShieldCheck, ArrowRight } from "lucide-react";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-violet-950 to-indigo-950 text-white">
       <header className="border-b border-white/10 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2 font-semibold tracking-tight">
-            <Music className="h-8 w-8 text-cyan-400" />
+            <Music className="h-8 w-8 text-fuchsia-400" />
             <span className="text-lg">SMG Distribution</span>
           </div>
           <nav className="flex items-center gap-3 text-sm">
@@ -18,7 +18,7 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/register"
-              className="rounded-lg bg-cyan-500 px-4 py-2 font-medium text-slate-950 hover:bg-cyan-400"
+              className="rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 font-medium text-white hover:from-violet-400 hover:to-fuchsia-400"
             >
               Đăng ký
             </Link>
@@ -28,7 +28,7 @@ export default function LandingPage() {
 
       <main>
         <section className="mx-auto max-w-6xl px-6 py-20 md:py-28">
-          <p className="mb-4 inline-block rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1 text-sm text-cyan-300">
+          <p className="mb-4 inline-block rounded-full border border-violet-400/40 bg-violet-500/15 px-4 py-1 text-sm text-violet-200">
             Phân phối nhạc toàn cầu · Content ID
           </p>
           <h1 className="max-w-3xl text-4xl font-bold leading-tight tracking-tight md:text-5xl lg:text-6xl">
@@ -40,7 +40,7 @@ export default function LandingPage() {
           <div className="mt-10 flex flex-wrap gap-4">
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-slate-950 hover:bg-cyan-400"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 py-3 font-semibold text-white hover:from-violet-400 hover:to-fuchsia-400"
             >
               Bắt đầu miễn phí
               <ArrowRight className="h-4 w-4" />
@@ -76,7 +76,7 @@ export default function LandingPage() {
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
-                <ShieldCheck className="mb-4 h-10 w-10 text-cyan-400" />
+                <ShieldCheck className="mb-4 h-10 w-10 text-violet-300" />
                 <h3 className="text-lg font-semibold">Hỗ trợ Content ID</h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-400">
                   Quy trình và tài liệu hướng dẫn bảo vệ tác phẩm trên các nền tảng UGC và cửa hàng nhạc.

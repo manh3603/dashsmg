@@ -1,3 +1,5 @@
+# Blueprint Render.com — một Web Service (Next + API nội bộ qua scripts/start-all.mjs).
+# https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: music-dashboard
@@ -8,7 +10,10 @@ services:
     startCommand: npm run start:render
     healthCheckPath: /smg-api/health
     envVars:
-      # Demo auth (bắt buộc nếu muốn đăng nhập)
+      - key: NODE_ENV
+        value: production
+
+      # Tuỳ chọn: mật khẩu đăng nhập dự phòng qua env (không bật gợi ý trên UI trừ khi AUTH_DEMO_HINTS=1)
       - key: DEMO_AUTH_ADMIN_PASSWORD
         generateValue: true
       - key: DEMO_AUTH_LABEL_PASSWORD
@@ -16,7 +21,14 @@ services:
       - key: DEMO_AUTH_ARTIST_PASSWORD
         generateValue: true
 
-      # (Tuỳ chọn) Bật chế độ mock cho ACRCloud để QC không gọi ra ngoài
+      # Lần đầu tạo platform_admin: đặt trong Dashboard Render rồi POST /api/auth/bootstrap-first-admin (một lần)
+      # - key: AUTH_BOOTSTRAP_SECRET
+      #   generateValue: true
+
+      # Bắt buộc chỉnh trong Dashboard sau khi deploy (URL dịch vụ Render của bạn):
+      # PUBLIC_BACKEND_URL = https://<tên-service>.onrender.com/smg-api
+      # CORS_ORIGIN = https://<tên-service>.onrender.com
+      # (start-all.mjs đã gán từ RENDER_EXTERNAL_URL nếu bạn không đặt — kiểm tra lại sau deploy)
+
       - key: ACRCLOUD_MOCK
         value: "1"
-

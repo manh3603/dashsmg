@@ -15,21 +15,28 @@ The frontend proxies API calls via `/smg-api/*` to the backend on port 3001.
 
 ## Render.com (single service)
 
-This repo is set up to run **frontend + backend in one Render Web Service**.
+Chạy **Next + API Express** trong một Web Service (`scripts/start-all.mjs`).
 
-- **Build command**: `npm install && npm run build:all`
-- **Start command**: `npm run start:render`
-- **Health check path**: `/smg-api/health`
+- **Build**: `npm install && npm run build:all`
+- **Start**: `npm run start:render`
+- **Health check**: `/smg-api/health` (proxy tới backend `/health`)
 
-### Required environment variables (for demo login)
+`start-all.mjs` tự gán **`PUBLIC_BACKEND_URL`** = `RENDER_EXTERNAL_URL` + `/smg-api` (link upload/file công khai) và **`CORS_ORIGIN`** từ `RENDER_EXTERNAL_URL` khi bạn không đặt tay.
 
-Set these in Render → *Environment* (values are your choice):
+### Tài khoản & dữ liệu
 
-- `DEMO_AUTH_ADMIN_PASSWORD`
-- `DEMO_AUTH_LABEL_PASSWORD`
-- `DEMO_AUTH_ARTIST_PASSWORD`
+- **Thương mại**: đăng ký `/register` hoặc quản trị tạo user tại **Tài khoản hệ thống** — lưu `backend/data/accounts.json` (bcrypt).
+- **Admin đầu tiên**: đặt `AUTH_BOOTSTRAP_SECRET` trên Render, gọi một lần `POST /api/auth/bootstrap-first-admin` (xem `backend/env.example`).
+- **Deal đối tác**: trang **Deal đối tác** — `backend/data/partner-deals.json`.
+- **Free tier**: ổ đĩa instance có thể **mất khi restart** — bản production nên gắn **Persistent Disk** trỏ vào `backend/data` hoặc dùng DB ngoài.
 
-An example file is provided at `.env.example`.
+### Biến môi trường (tuỳ chọn)
+
+- `DEMO_AUTH_*_PASSWORD` — đăng nhập dự phòng qua env (gợi ý UI chỉ khi `AUTH_DEMO_HINTS=1`).
+- `AUTH_BOOTSTRAP_SECRET` — tạo platform admin lần đầu.
+- `PUBLIC_BACKEND_URL`, `CORS_ORIGIN` — ghi đè nếu domain tách khác `RENDER_EXTERNAL_URL`.
+
+Chi tiết API: `backend/env.example`.
 
 ## Learn More
 

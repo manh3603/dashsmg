@@ -7,6 +7,8 @@ export type ReleaseStatus =
   | "rejected"
   | "sent_to_stores"
   | "live"
+  /** Đã gửi yêu cầu gỡ / takedown khỏi cửa hàng (metadata hệ thống — xử lý thật theo quy trình đối tác). */
+  | "takedown"
   /** @deprecated dùng pending_qc — giữ để tương thích dữ liệu cũ */
   | "pending";
 
@@ -63,6 +65,8 @@ export type CmsStore = {
 const KEY_ROLE = "smg_role";
 const KEY_LOGIN = "smg_login";
 const KEY_DISPLAY = "smg_display_name";
+/** Phiên API (Bearer) — do backend cấp sau đăng nhập. */
+const KEY_API_SESSION = "smg_api_session_token";
 const KEY_STORES = "smg_cms_stores";
 const KEY_CATALOG = "smg_catalog";
 const KEY_MANAGED_USERS = "smg_managed_users";
@@ -72,7 +76,7 @@ export type PartnerSftpConfig = {
   host: string;
   port: number;
   username: string;
-  /** Chỉ cờ đã nhập mật khẩu (demo lưu cục bộ — production dùng backend/.env). */
+  /** Chỉ cờ đã nhập mật khẩu (cấu hình cục bộ; production nên dùng backend/.env). */
   passwordSet: boolean;
   remotePath: string;
   note: string;
@@ -127,12 +131,30 @@ export function setRole(role: AccountRole): void {
   emit();
 }
 
-export function setSession(role: AccountRole, login: string, displayName: string): void {
+export function setSession(
+  role: AccountRole,
+  login: string,
+  displayName: string,
+  apiSessionToken?: string | null
+): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY_ROLE, role);
   localStorage.setItem(KEY_LOGIN, login.trim());
   localStorage.setItem(KEY_DISPLAY, displayName.trim());
+  if (apiSessionToken === undefined) {
+    localStorage.removeItem(KEY_API_SESSION);
+  } else if (apiSessionToken === null || apiSessionToken.trim() === "") {
+    localStorage.removeItem(KEY_API_SESSION);
+  } else {
+    localStorage.setItem(KEY_API_SESSION, apiSessionToken.trim());
+  }
   emit();
+}
+
+export function getApiSessionToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const s = localStorage.getItem(KEY_API_SESSION);
+  return s?.trim() || null;
 }
 
 export function getLogin(): string | null {
@@ -152,6 +174,7 @@ export function clearSession(): void {
   localStorage.removeItem(KEY_ROLE);
   localStorage.removeItem(KEY_LOGIN);
   localStorage.removeItem(KEY_DISPLAY);
+  localStorage.removeItem(KEY_API_SESSION);
   emit();
 }
 

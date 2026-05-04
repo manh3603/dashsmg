@@ -52,18 +52,27 @@ async function waitForBackendReady(origin, timeoutMs = 60000) {
   throw new Error(`Backend not ready after ${timeoutMs}ms: ${url}`);
 }
 
+const renderPublic =
+  process.env.PUBLIC_BACKEND_URL?.trim() ||
+  (process.env.RENDER_EXTERNAL_URL
+    ? `${String(process.env.RENDER_EXTERNAL_URL).replace(/\/$/, "")}/smg-api`
+    : "");
+
 const backend = run(
   "backend",
   process.platform === "win32" ? "npm.cmd" : "npm",
   ["run", "start", "--prefix", "backend"],
   {
-    // Backend chỉ cần internal, không cần public.
+    NODE_ENV: process.env.NODE_ENV || "production",
     PORT: String(BACKEND_PORT),
     BIND_HOST: "127.0.0.1",
-    // Giúp backend biết URL public của nó (khi build link tải file).
-    PUBLIC_BACKEND_URL:
-      process.env.PUBLIC_BACKEND_URL ||
-      `http://127.0.0.1:${BACKEND_PORT}`,
+    /** Link upload công khai: Render dùng cùng host + /smg-api proxy tới backend. */
+    PUBLIC_BACKEND_URL: renderPublic || `http://127.0.0.1:${BACKEND_PORT}`,
+    /** CORS khi NODE_ENV=production: cho phép origin trang (Render tự có RENDER_EXTERNAL_URL). */
+    CORS_ORIGIN:
+      process.env.CORS_ORIGIN?.trim() ||
+      (process.env.RENDER_EXTERNAL_URL ? String(process.env.RENDER_EXTERNAL_URL).replace(/\/$/, "") : "") ||
+      `http://127.0.0.1:${FRONTEND_PORT}`,
   }
 );
 

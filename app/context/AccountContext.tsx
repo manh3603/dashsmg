@@ -4,12 +4,14 @@ import React, { createContext, useCallback, useContext, useSyncExternalStore } f
 import type { AccountRole } from "@/lib/smg-storage";
 import {
   clearSession,
+  getApiSessionToken,
   getDisplayName,
   getLogin,
   getRole,
   setRole as persistRole,
   setSession as persistSession,
 } from "@/lib/smg-storage";
+import { isBackendConfigured, postAuthLogout } from "@/lib/backend-api";
 
 type Ctx = {
   role: AccountRole | null;
@@ -17,7 +19,7 @@ type Ctx = {
   displayName: string | null;
   ready: boolean;
   setRole: (r: AccountRole) => void;
-  setSession: (role: AccountRole, login: string, displayName: string) => void;
+  setSession: (role: AccountRole, login: string, displayName: string, apiSessionToken?: string | null) => void;
   logout: () => void;
 };
 
@@ -63,11 +65,13 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     persistRole(r);
   }, []);
 
-  const setSession = useCallback((r: AccountRole, userLogin: string, name: string) => {
-    persistSession(r, userLogin, name);
+  const setSession = useCallback((r: AccountRole, userLogin: string, name: string, apiSessionToken?: string | null) => {
+    persistSession(r, userLogin, name, apiSessionToken);
   }, []);
 
   const logout = useCallback(() => {
+    const tok = getApiSessionToken();
+    if (tok && isBackendConfigured()) void postAuthLogout(tok);
     clearSession();
   }, []);
 

@@ -42,14 +42,15 @@ export default function ArtistsPage() {
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-cyan-600 hover:underline"
-                    onClick={() => alert("Hướng dẫn Spotify for Artists / Apple Music for Artists (demo)")}
+                  <a
+                    href="https://artists.spotify.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-violet-600 hover:underline"
                   >
-                    Hướng dẫn
+                    Spotify for Artists
                     <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
+                  </a>
                 </td>
               </tr>
             ))}
