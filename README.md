@@ -2,16 +2,26 @@ This is a Next.js app with an Express backend (in `backend/`).
 
 ## Getting Started
 
-First, run the development server:
+Cài dependency và chạy **cả API lẫn Next** (một lệnh):
 
 ```bash
 npm install
 npm run dev:all
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở [http://localhost:3000](http://localhost:3000). API backend: `http://127.0.0.1:3001`; trình duyệt gọi API qua proxy `/smg-api/*`.
 
-The frontend proxies API calls via `/smg-api/*` to the backend on port 3001.
+**Kiểm nhanh toàn dự án (lint + build frontend + build backend):** `npm run verify`
+
+### Gỡ lỗi khi «chạy dự án bị lỗi»
+
+| Triệu chứng | Cách xử lý |
+|---------------|------------|
+| Đăng nhập lỗi / `smg-api` 502 / «Không kết nối được backend» | Bạn đang chỉ chạy `npm run dev` (thiếu API). Dùng **`npm run dev:all`**, hoặc terminal 1: `npm run dev --prefix backend`, terminal 2: `npm run dev`. |
+| `EADDRINUSE` cổng 3000 hoặc 3001 | `npx kill-port 3000 3001` (hoặc tắt process Node cũ), rồi chạy lại `dev:all`. |
+| `Cannot find module .../backend/dist/index.js` khi `npm run start` / Render | Chạy **`npm run build --prefix backend`** (đã gồm trong `build:all`). |
+| Windows + `concurrently` lạ | Cập nhật Node **≥ 20**, xóa `node_modules` + `package-lock.json` rồi `npm install` lại nếu cần. |
+| Next báo lỗi cache | Xóa thư mục `.next`, chạy lại `npm run dev:all`. |
 
 ## Render.com — hướng dẫn từ đầu đến cuối
 

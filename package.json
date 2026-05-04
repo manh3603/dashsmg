@@ -14,7 +14,8 @@
     "build:all": "npm run build && npm run build --prefix backend",
     "start": "next start --hostname 0.0.0.0",
     "start:render": "node scripts/start-all.mjs",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify": "npm run lint && npm run build:all"
   },
   "dependencies": {
     "archiver": "^7.0.1",
