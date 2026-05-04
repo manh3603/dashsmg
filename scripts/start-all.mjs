@@ -15,7 +15,8 @@ const FRONTEND_PORT = Number(process.env.PORT || 3000);
 function run(name, command, args, extraEnv = {}) {
   const child = spawn(command, args, {
     stdio: "inherit",
-    shell: false,
+    // Windows: cần shell để chạy .cmd ổn định (tránh spawn EINVAL).
+    shell: process.platform === "win32",
     env: { ...process.env, ...extraEnv },
   });
 
@@ -27,6 +28,28 @@ function run(name, command, args, extraEnv = {}) {
   });
 
   return child;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function waitForBackendReady(origin, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  const url = `${origin.replace(/\/$/, "")}/health`;
+  process.stdout.write(`[start] waiting for backend ${url}\n`);
+  // Poll nhanh để tránh race (Next nhận request trước khi backend listen).
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (res.ok) {
+        process.stdout.write("[start] backend ready\n");
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    await sleep(400);
+  }
+  throw new Error(`Backend not ready after ${timeoutMs}ms: ${url}`);
 }
 
 const backend = run(
@@ -51,22 +74,35 @@ const frontendEnv =
     ? {}
     : { BACKEND_PROXY_TARGET: `http://127.0.0.1:${BACKEND_PORT}` };
 
-const frontend = run(
-  "frontend",
-  process.platform === "win32" ? "npm.cmd" : "npm",
-  ["run", "start"],
-  {
-    ...frontendEnv,
-    PORT: String(FRONTEND_PORT),
-  }
-);
+const effectiveBackendOrigin =
+  proxyTarget.length > 0 ? proxyTarget : `http://127.0.0.1:${BACKEND_PORT}`;
+
+let frontend = null;
+
+// Start frontend only after backend is reachable to avoid 502/fetch failed.
+waitForBackendReady(effectiveBackendOrigin)
+  .then(() => {
+    frontend = run(
+      "frontend",
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      ["run", "start"],
+      {
+        ...frontendEnv,
+        PORT: String(FRONTEND_PORT),
+      }
+    );
+  })
+  .catch((e) => {
+    console.error(`[start] ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  });
 
 function shutdown() {
   try {
     backend.kill("SIGTERM");
   } catch {}
   try {
-    frontend.kill("SIGTERM");
+    frontend?.kill?.("SIGTERM");
   } catch {}
 }
 
