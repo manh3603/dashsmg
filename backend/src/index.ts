@@ -44,6 +44,13 @@ app.get("/api/auth/demo-hints", (_req, res) => {
 });
 
 /** Đăng nhập demo — xác thực trên server, không gửi hash mật khẩu xuống client bundle. */
+app.get("/api/auth/login", (_req, res) => {
+  res.status(405).json({
+    ok: false,
+    error: "Endpoint này chỉ hỗ trợ POST. Hãy gọi POST /api/auth/login với JSON { login, password }.",
+  });
+});
+
 app.post("/api/auth/login", (req, res) => {
   const login = typeof (req.body as { login?: string })?.login === "string" ? String((req.body as { login: string }).login) : "";
   const password = typeof (req.body as { password?: string })?.password === "string" ? String((req.body as { password: string }).password) : "";
