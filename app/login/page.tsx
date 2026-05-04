@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Music } from "lucide-react";
 import { useAccount } from "@/context/AccountContext";
-import { fetchDemoAuthHints, isBackendConfigured, postAuthLogin, type DemoAccountHint } from "@/lib/backend-api";
+import {
+  fetchBackendHealthPayload,
+  fetchDemoAuthHints,
+  isBackendConfigured,
+  postAuthLogin,
+  type DemoAccountHint,
+} from "@/lib/backend-api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,10 +22,18 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [hints, setHints] = useState<DemoAccountHint[] | null>(null);
   const [hintNote, setHintNote] = useState<string | null>(null);
+  const [apiReachable, setApiReachable] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!isBackendConfigured()) return;
+    if (!isBackendConfigured()) {
+      setApiReachable(false);
+      return;
+    }
     let cancelled = false;
+    void fetchBackendHealthPayload().then((h) => {
+      if (cancelled) return;
+      setApiReachable(Boolean(h?.ok));
+    });
     void fetchDemoAuthHints().then((h) => {
       if (cancelled || !h?.accounts?.length) return;
       setHints(h.accounts);
@@ -64,6 +78,14 @@ export default function LoginPage() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-slate-200">
           <form className="space-y-6" onSubmit={(e) => void handleLogin(e)}>
+            {apiReachable === false && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+                Không kết nối được API (proxy <code className="text-xs">/smg-api</code> → cổng 3001). Hãy chạy cả backend
+                cùng Next: <code className="rounded bg-amber-100/80 px-1 text-xs">npm run dev:all</code> hoặc mở terminal
+                thứ hai: <code className="rounded bg-amber-100/80 px-1 text-xs">npm run dev --prefix backend</code> rồi
+                tải lại trang.
+              </p>
+            )}
             <div>
               <label htmlFor="login" className="block text-sm font-medium text-slate-700">
                 Tên đăng nhập

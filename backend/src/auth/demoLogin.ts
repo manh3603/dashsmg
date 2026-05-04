@@ -41,11 +41,12 @@ export type DemoLoginOk = {
 
 export function tryDemoLogin(loginRaw: string, password: string): DemoLoginOk | null {
   const login = loginRaw.trim().toLowerCase();
-  if (!login || !password) return null;
+  const pwd = password.trim();
+  if (!login || !pwd) return null;
   for (const e of ENTRIES) {
     if (!e.logins.some((x) => x.toLowerCase() === login)) continue;
     const expected = passwordFor(e);
-    if (!expected || expected !== password) return null;
+    if (!expected || expected !== pwd) return null;
     return {
       role: e.role,
       displayName: e.displayName,
