@@ -40,8 +40,11 @@ async function proxyToBackend(req: NextRequest, pathSegments: string[] | undefin
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    if (req.body) {
-      init.body = req.body;
+    // Đọc body ra buffer để proxy ổn định trên Node/Render (tránh stream issues).
+    const buf = await req.arrayBuffer().catch(() => null);
+    if (buf && buf.byteLength > 0) {
+      headers.delete("content-length");
+      init.body = buf;
       init.duplex = "half";
     }
   }
