@@ -20,7 +20,8 @@ Mở [http://localhost:3000](http://localhost:3000). API backend: `http://127.0.
 | Đăng nhập lỗi / `smg-api` 502 / «Không kết nối được backend» | Bạn đang chỉ chạy `npm run dev` (thiếu API). Dùng **`npm run dev:all`**, hoặc terminal 1: `npm run dev --prefix backend`, terminal 2: `npm run dev`. |
 | `EADDRINUSE` cổng 3000 hoặc 3001 | `npx kill-port 3000 3001` (hoặc tắt process Node cũ), rồi chạy lại `dev:all`. |
 | `Cannot find module .../backend/dist/index.js` khi `npm run start` / Render | Chạy **`npm run build --prefix backend`** (đã gồm trong `build:all`). |
-| Windows + `concurrently` lạ | Cập nhật Node **≥ 20**, xóa `node_modules` + `package-lock.json` rồi `npm install` lại nếu cần. |
+| `dev:all` chờ backend lâu | Đặt `DEV_BACKEND_WAIT_MS=180000` (ms) rồi chạy lại. |
+| Windows / spawn lạ | `dev:all` dùng `scripts/dev-all.mjs` (gọi trực tiếp `node` + Next/tsx). Cập nhật Node **≥ 20**; thử xóa `.next` và `npm install` lại. |
 | Next báo lỗi cache | Xóa thư mục `.next`, chạy lại `npm run dev:all`. |
 
 ## Render.com — hướng dẫn từ đầu đến cuối
