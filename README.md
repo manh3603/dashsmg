@@ -13,6 +13,8 @@ Mở [http://localhost:3000](http://localhost:3000). API backend: `http://127.0.
 
 **Kiểm nhanh toàn dự án (lint + build frontend + build backend):** `npm run verify`
 
+**Trong Cursor:** mở terminal (`` Ctrl+` `` hoặc **Terminal → New Terminal**), `cd` vào thư mục repo, chạy cùng lệnh như trên — không cần cấu hình riêng; đảm bảo **Node ≥ 20** (`node -v`).
+
 ### Gỡ lỗi khi «chạy dự án bị lỗi»
 
 | Triệu chứng | Cách xử lý |
@@ -23,6 +25,8 @@ Mở [http://localhost:3000](http://localhost:3000). API backend: `http://127.0.
 | `dev:all` chờ backend lâu | Đặt `DEV_BACKEND_WAIT_MS=180000` (ms) rồi chạy lại. |
 | Windows / spawn lạ | `dev:all` dùng `scripts/dev-all.mjs` (gọi trực tiếp `node` + Next/tsx). Cập nhật Node **≥ 20**; thử xóa `.next` và `npm install` lại. |
 | Next báo lỗi cache | Xóa thư mục `.next`, chạy lại `npm run dev:all`. |
+
+<a id="render-docs"></a>
 
 ## Render.com — hướng dẫn từ đầu đến cuối
 
@@ -97,6 +101,58 @@ Nếu đặt `DEMO_AUTH_ADMIN_PASSWORD`, `DEMO_AUTH_LABEL_PASSWORD`, `DEMO_AUTH_
 
 File tham chiếu: `app/lib/permissions.ts`, `app/dashboard/layout.tsx`, các component `Require*`.
 
+<a id="render-checklist"></a>
+
+### G. Render.com — checklist chi tiết (Dashboard)
+
+Làm lần lượt; bỏ qua bước đã xong nếu repo đã kết nối.
+
+1. **Đăng nhập** [dashboard.render.com](https://dashboard.render.com) (GitHub/Google/email).
+2. **Liên kết GitHub** (một lần): **Account** (góc avatar) hoặc khi tạo service → **Connect GitHub** → cấp quyền repo (chọn **Only select repositories** nếu muốn hạn chế).
+3. **Tạo dịch vụ từ Blueprint**
+   - **New** → **Blueprint**.
+   - **Connect** repository chứa project (fork hoặc repo gốc).
+   - Branch mặc định thường là `main` — chỉnh nếu bạn deploy nhánh khác.
+   - Render đọc file **`render.yaml`** ở **thư mục gốc** repo.
+   - Đặt **Blueprint Name** (tuỳ ý) → **Apply**.
+4. **Theo dõi lần deploy đầu**
+   - Vào service vừa tạo → tab **Events** / **Logs**.
+   - **Build**: phải chạy `npm install` và `npm run build:all` (Next + `backend` → `dist/`).
+   - **Deploy**: sau build, chạy `npm run start:render`; log có `[start] waiting for backend` rồi `[start] backend ready`, sau đó Next **Ready**.
+   - Khi trạng thái **Live**, copy URL dạng `https://<tên-service>.onrender.com`.
+5. **Kiểm tra health (bắt buộc)**  
+   Mở trình duyệt: `https://<tên-service>.onrender.com/smg-api/health`  
+   - **HTTP 200** và JSON có `"ok": true` → proxy Next → backend ổn.  
+   - **502 / timeout**: xem **Logs** — thường backend chưa kịp listen; vào **Environment** thêm `START_BACKEND_WAIT_MS=180000` → **Manual Deploy** → **Deploy latest commit**.
+6. **Bootstrap admin nền tảng (một lần)**  
+   - **Environment** → **Add Environment Variable**: `AUTH_BOOTSTRAP_SECRET` = chuỗi dài ngẫu nhiên → **Save Changes** (service sẽ redeploy hoặc bạn **Manual Deploy**).  
+   - Từ máy bạn, gọi `POST` bootstrap (xem mục **D** ở trên, thay `<HOST>` bằng URL không có slash cuối).  
+   - Đăng nhập `/login` bằng `login`/`password` đã gửi trong JSON.
+7. **Tuỳ chọn sau khi ổn định**
+   - **Persistent Disk**: gắn disk vào đường dẫn mount chứa `backend/data` nếu cần giữ user/upload lâu dài (free tier instance có thể xoá disk khi thay đổi plan/rebuild không có disk).
+   - **Custom domain**: **Settings** → **Custom Domain** — trỏ DNS theo hướng dẫn Render; khi đó có thể cần đặt lại `CORS_ORIGIN` / `PUBLIC_BACKEND_URL` nếu domain khác `*.onrender.com` (thường vẫn để `start-all.mjs` tự suy ra từ `RENDER_EXTERNAL_URL`).
+
+### H. Cursor / máy local vs Render (đối chiếu)
+
+| Mục | Cursor hoặc terminal local | Render.com (production) |
+|-----|---------------------------|-------------------------|
+| Cài dependency | `npm install` | Render chạy trong **Build** (`npm install`) |
+| Chạy dev (API + Next) | `npm run dev:all` | Không dùng — chỉ **Start** production |
+| Build production | `npm run build:all` | Cùng lệnh trong **Build Command** |
+| Chạy giống cloud | `NODE_ENV=production` + `PORT=...` + `npm run start:render` | **Start Command**: `npm run start:render` |
+| URL | `http://localhost:3000` | `https://<service>.onrender.com` |
+| API trình duyệt | `/smg-api/...` (proxy Next) | Giống vậy — **một host** |
+
+### I. Lỗi thường gặp trên Render
+
+| Hiện tượng | Hướng xử lý |
+|------------|-------------|
+| Build failed — `Cannot find module` / `tsc` | Đảm bảo repo có `backend/` và **Build** là `npm install && npm run build:all`; Node **≥ 20** (`NODE_VERSION` trong `render.yaml`). |
+| Logs: `Backend not ready after …ms` | Thêm `START_BACKEND_WAIT_MS=180000` (hoặc lớn hơn), **Manual Deploy**. |
+| `/smg-api/health` 502 | Đọc **Logs** lúc request; backend crash → thường thiếu build backend (`dist`) hoặc lỗi runtime; build lại local với `npm run build:all`. |
+| Trang web mở chậm lần đầu | **Free tier**: service **sleep** sau idle — lần mở đầu có thể **30–60s** cold start; bình thường. |
+| Đăng nhập / upload lỗi sau restart | Free tier **không có persistent disk**: `accounts.json` có thể mất — gắn **Disk** hoặc backup DB ngoài. |
+
 ### Biến môi trường Render (tóm tắt)
 
 - **`PUBLIC_BACKEND_URL` / `CORS_ORIGIN`**: thường **không cần đặt** — `start-all.mjs` gán từ `RENDER_EXTERNAL_URL`.
@@ -128,17 +184,7 @@ Mở `http://127.0.0.1:10000/smg-api/health` và `http://127.0.0.1:10000`.
 
 Chi tiết API backend: `backend/env.example`.
 
-## Learn More
+## Tài liệu thêm
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Deploy production**: dùng **Render** — xem [hướng dẫn đầy đủ](#render-docs), [checklist Dashboard](#render-checklist) và file [`render.yaml`](./render.yaml).
+- **Next.js**: [Next.js Documentation](https://nextjs.org/docs), [Deploying Next.js](https://nextjs.org/docs/app/building-your-application/deploying).
