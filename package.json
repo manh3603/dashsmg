@@ -2,6 +2,9 @@
   "name": "music-dashboard",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "backend"
+  ],
   "engines": {
     "node": ">=20"
   },
