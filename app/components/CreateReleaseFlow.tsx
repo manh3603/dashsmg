@@ -75,13 +75,14 @@ export default function CreateReleaseFlow() {
   const lastUpcAutoKeyRef = useRef<string | null>(null);
   /** Bài mới + Single: cấp ISRC ngay khi chọn loại (không chờ bước 4). */
   const earlyNewSingleIsrcRef = useRef<string | null>(null);
+  /** Single mới: một sóng cấp ISRC+UPC (tránh race giữa hai useEffect). */
+  const earlyNewSinglePairWaveRef = useRef<string | null>(null);
   /** Bài mới + Album/EP: cấp UPC Soul ngay khi chọn loại. */
   const earlyNewAlbumUpcRef = useRef<string | null>(null);
   /** Bài mới tại bước 4: bổ sung ISRC/UPC nếu bước đầu bỏ sót (chưa có phiên API / backend). */
-  const lastNewSingleStep4IsrcRef = useRef<string | null>(null);
-  const lastNewSingleStep4UpcRef = useRef<string | null>(null);
+  const lastNewSingleStep4PairWaveRef = useRef<string | null>(null);
   const lastNewAlbumStep4UpcRef = useRef<string | null>(null);
-  /** Bài mới + Single: cấp UPC Soul khi chọn loại (song song ISRC). */
+  /** Giữ ref «đã cấp UPC sớm» cho upload single (runAudioUpload). */
   const earlyNewSingleUpcRef = useRef<string | null>(null);
   /** Single đang sửa — bước 4: cấp UPC nếu trống. */
   const lastEditSingleStep4UpcRef = useRef<string | null>(null);
@@ -128,6 +129,9 @@ export default function CreateReleaseFlow() {
     >,
     albumTracks: [] as AlbumTrackFormRow[],
   }));
+
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
 
   const canNext = useMemo(() => {
     switch (currentStep) {
@@ -185,9 +189,9 @@ export default function CreateReleaseFlow() {
       if (typeof window !== "undefined" && !getApiSessionToken()) {
         earlyNewSingleIsrcRef.current = null;
         earlyNewSingleUpcRef.current = null;
+        earlyNewSinglePairWaveRef.current = null;
         earlyNewAlbumUpcRef.current = null;
-        lastNewSingleStep4IsrcRef.current = null;
-        lastNewSingleStep4UpcRef.current = null;
+        lastNewSingleStep4PairWaveRef.current = null;
         lastNewAlbumStep4UpcRef.current = null;
         lastEditSingleStep4UpcRef.current = null;
         lastIsrcAutoKeyRef.current = null;
@@ -207,63 +211,62 @@ export default function CreateReleaseFlow() {
     if (currentStep < 4) {
       lastIsrcAutoKeyRef.current = null;
       lastUpcAutoKeyRef.current = null;
-      lastNewSingleStep4IsrcRef.current = null;
-      lastNewSingleStep4UpcRef.current = null;
+      lastNewSingleStep4PairWaveRef.current = null;
       lastNewAlbumStep4UpcRef.current = null;
       lastEditSingleStep4UpcRef.current = null;
     }
   }, [currentStep]);
 
+  /** Single mới (chưa edit): cấp ISRC và/hoặc UPC trong cùng một sóng — tránh race hai useEffect. */
   useEffect(() => {
     if (editId) return;
     if (releaseKind !== "single") {
       earlyNewSingleIsrcRef.current = null;
       earlyNewSingleUpcRef.current = null;
+      earlyNewSinglePairWaveRef.current = null;
       return;
     }
-    if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
-    const k = "early-new-single";
-    if (earlyNewSingleIsrcRef.current === k) return;
-    earlyNewSingleIsrcRef.current = k;
-    void postIsrcNext(tok).then((r) => {
-      if (!r.ok) {
-        earlyNewSingleIsrcRef.current = null;
-        return;
-      }
-      setFormData((fd) =>
-        isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
-      );
-    });
-    // Không thêm formData.isrc — tránh vòng lặp; authRevision bắt phiên API sau đăng nhập.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [releaseKind, editId, authRevision]);
 
-  useEffect(() => {
-    if (editId) return;
-    if (releaseKind !== "single") {
-      earlyNewSingleUpcRef.current = null;
-      return;
-    }
-    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
-    if (!isBackendConfigured()) return;
-    const tok = getApiSessionToken();
-    if (!tok) return;
-    const k = "early-new-single-upc";
-    if (earlyNewSingleUpcRef.current === k) return;
-    earlyNewSingleUpcRef.current = k;
-    void postUpcNext(tok).then((r) => {
-      if (!r.ok) {
-        earlyNewSingleUpcRef.current = null;
-        return;
+    const fd = formDataRef.current;
+    const needIsrc = !(isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc));
+    const needUpc = !(isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc));
+    if (!needIsrc && !needUpc) return;
+
+    const wave = `early-single-${authRevision}`;
+    if (earlyNewSinglePairWaveRef.current === wave) return;
+    earlyNewSinglePairWaveRef.current = wave;
+
+    void (async () => {
+      let anyFail = false;
+      if (needIsrc) {
+        const r = await postIsrcNext(tok);
+        if (!r.ok) {
+          anyFail = true;
+        } else {
+          earlyNewSingleIsrcRef.current = "early-new-single";
+          setFormData((prev) =>
+            isValidIsrc(prev.isrc) && !isPlaceholderIsrc(prev.isrc) ? prev : { ...prev, isrc: r.isrc }
+          );
+        }
       }
-      setFormData((fd) =>
-        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
-      );
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+      if (needUpc) {
+        const r = await postUpcNext(tok);
+        if (!r.ok) {
+          anyFail = true;
+        } else {
+          earlyNewSingleUpcRef.current = "early-new-single-upc";
+          setFormData((prev) =>
+            isValidUpcGtin(prev.upc) && !isPlaceholderUpc(prev.upc) ? prev : { ...prev, upc: r.upc }
+          );
+        }
+      }
+      if (anyFail) {
+        earlyNewSinglePairWaveRef.current = null;
+      }
+    })();
   }, [releaseKind, editId, authRevision]);
 
   useEffect(() => {
@@ -291,47 +294,42 @@ export default function CreateReleaseFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
   }, [releaseKind, editId, authRevision]);
 
-  // Bài mới: đến bước 4 vẫn thiếu ISRC/UPC hợp lệ → thử cấp lại (phiên API có thể có sau bước upload).
+  // Bài mới Single: bước 4 thiếu ISRC và/hoặc UPC → cấp trong một sóng (phiên API có thể có sau upload).
   useEffect(() => {
     if (currentStep !== 4 || editId || releaseKind !== "single") return;
-    if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
-    const dedupeKey = "new-step4-isrc";
-    if (lastNewSingleStep4IsrcRef.current === dedupeKey) return;
-    lastNewSingleStep4IsrcRef.current = dedupeKey;
-    void postIsrcNext(tok).then((r) => {
-      if (!r.ok) {
-        lastNewSingleStep4IsrcRef.current = null;
-        return;
-      }
-      setFormData((fd) =>
-        isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
-      );
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.isrc (vòng lặp)
-  }, [currentStep, releaseKind, editId, authRevision]);
 
-  useEffect(() => {
-    if (currentStep !== 4 || editId || releaseKind !== "single") return;
-    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
-    if (!isBackendConfigured()) return;
-    const tok = getApiSessionToken();
-    if (!tok) return;
-    const dedupeKey = "new-step4-upc";
-    if (lastNewSingleStep4UpcRef.current === dedupeKey) return;
-    lastNewSingleStep4UpcRef.current = dedupeKey;
-    void postUpcNext(tok).then((r) => {
-      if (!r.ok) {
-        lastNewSingleStep4UpcRef.current = null;
-        return;
+    const fd = formDataRef.current;
+    const needIsrc = !(isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc));
+    const needUpc = !(isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc));
+    if (!needIsrc && !needUpc) return;
+
+    const wave = `new-single-s4-${authRevision}`;
+    if (lastNewSingleStep4PairWaveRef.current === wave) return;
+    lastNewSingleStep4PairWaveRef.current = wave;
+
+    void (async () => {
+      let anyFail = false;
+      if (needIsrc) {
+        const r = await postIsrcNext(tok);
+        if (!r.ok) anyFail = true;
+        else
+          setFormData((prev) =>
+            isValidIsrc(prev.isrc) && !isPlaceholderIsrc(prev.isrc) ? prev : { ...prev, isrc: r.isrc }
+          );
       }
-      setFormData((fd) =>
-        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
-      );
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+      if (needUpc) {
+        const r = await postUpcNext(tok);
+        if (!r.ok) anyFail = true;
+        else
+          setFormData((prev) =>
+            isValidUpcGtin(prev.upc) && !isPlaceholderUpc(prev.upc) ? prev : { ...prev, upc: r.upc }
+          );
+      }
+      if (anyFail) lastNewSingleStep4PairWaveRef.current = null;
+    })();
   }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
