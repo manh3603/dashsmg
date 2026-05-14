@@ -178,6 +178,31 @@ export default function CreateReleaseFlow() {
     }
   }, [currentStep, releaseKind, formData]);
 
+  /** Đăng nhập / lưu phiên API sau khi effect ISRC/UPC đã chạy (lúc đó chưa có token) — cần gọi lại. */
+  const [authRevision, setAuthRevision] = useState(0);
+  useEffect(() => {
+    const bump = () => {
+      if (typeof window !== "undefined" && !getApiSessionToken()) {
+        earlyNewSingleIsrcRef.current = null;
+        earlyNewSingleUpcRef.current = null;
+        earlyNewAlbumUpcRef.current = null;
+        lastNewSingleStep4IsrcRef.current = null;
+        lastNewSingleStep4UpcRef.current = null;
+        lastNewAlbumStep4UpcRef.current = null;
+        lastEditSingleStep4UpcRef.current = null;
+        lastIsrcAutoKeyRef.current = null;
+        lastUpcAutoKeyRef.current = null;
+      }
+      setAuthRevision((n) => n + 1);
+    };
+    window.addEventListener("smg-storage", bump);
+    window.addEventListener("storage", bump);
+    return () => {
+      window.removeEventListener("smg-storage", bump);
+      window.removeEventListener("storage", bump);
+    };
+  }, []);
+
   useEffect(() => {
     if (currentStep < 4) {
       lastIsrcAutoKeyRef.current = null;
@@ -212,8 +237,9 @@ export default function CreateReleaseFlow() {
         isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khi đổi loại phát hành / chế độ sửa
-  }, [releaseKind, editId]);
+    // Không thêm formData.isrc — tránh vòng lặp; authRevision bắt phiên API sau đăng nhập.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (editId) return;
@@ -237,8 +263,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (editId) return;
@@ -262,8 +288,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [releaseKind, editId, authRevision]);
 
   // Bài mới: đến bước 4 vẫn thiếu ISRC/UPC hợp lệ → thử cấp lại (phiên API có thể có sau bước upload).
   useEffect(() => {
@@ -284,8 +310,8 @@ export default function CreateReleaseFlow() {
         isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.isrc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (currentStep !== 4 || editId || releaseKind !== "single") return;
@@ -305,8 +331,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (currentStep !== 4 || editId || releaseKind !== "album_ep") return;
@@ -326,8 +352,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   // Bài đang sửa: bước 4 mới cấp ISRC nếu trống (bài mới đã cấp ở effect «chọn Single»).
   useEffect(() => {
@@ -349,8 +375,8 @@ export default function CreateReleaseFlow() {
         isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.isrc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (currentStep !== 4 || releaseKind !== "album_ep") return;
@@ -371,8 +397,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
     if (currentStep !== 4 || releaseKind !== "single") return;
@@ -393,8 +419,8 @@ export default function CreateReleaseFlow() {
         isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, releaseKind, editId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- không thêm formData.upc (vòng lặp)
+  }, [currentStep, releaseKind, editId, authRevision]);
 
   useEffect(() => {
     const syncStores = () => {
