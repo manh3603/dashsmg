@@ -10,7 +10,8 @@ import { loadCisRecipients } from "./ddex/cisParties.js";
 import { deliverCisRelease } from "./delivery/deliverRelease.js";
 import { cisStoreDisplayName, listCisDeliveryConfigured } from "./delivery/cisEnv.js";
 import { fetchPartnerAnalyticsReport } from "./analyticsPartnerReport.js";
-import { isSftpDeliveryConfigured } from "./delivery/sftpEnv.js";
+import { isSftpDeliveryConfigured, sftpConfigPublic } from "./delivery/sftpEnv.js";
+import { defaultSenderPartyId } from "./ddex/soulDpid.js";
 import { catalogItemToTable, tableToMatrix } from "./releaseTable.js";
 import { mountUploads } from "./uploads.js";
 import { identifyFromAudioUrl, isAcrConfigured } from "./acrcloud/identify.js";
@@ -24,8 +25,9 @@ import {
   upsertStoredAccountAdmin,
 } from "./accountsStore.js";
 import { allocateNextIsrc } from "./isrcAllocator.js";
+import { allocateNextSoulUpc } from "./metadata/upcAllocator.js";
 import { getBearerToken, issueSession, resolveSession, revokeSession } from "./sessionsStore.js";
-import { deleteDeal, listDeals, upsertDeal } from "./dealsStore.js";
+import { cisStoreKeysFromActiveDeals, deleteDeal, listDeals, upsertDeal } from "./dealsStore.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -282,6 +284,13 @@ app.post("/api/admin/deals/upsert", (req, res) => {
     contactEmail?: string;
     notes?: string;
     reportingStores?: string;
+    deliveryCisStoreKeys?: unknown;
+    deliverySftpTargetsJson?: string;
+    analyticsReportUrl?: string;
+    analyticsReportMethod?: string;
+    analyticsReportBearer?: string;
+    analyticsReportAuthHeader?: string;
+    analyticsReportAuthValue?: string;
     status?: string;
   };
   const out = upsertDeal({
@@ -295,6 +304,15 @@ app.post("/api/admin/deals/upsert", (req, res) => {
     contactEmail: typeof b.contactEmail === "string" ? b.contactEmail : undefined,
     notes: typeof b.notes === "string" ? b.notes : undefined,
     reportingStores: typeof b.reportingStores === "string" ? b.reportingStores : undefined,
+    deliveryCisStoreKeys: Array.isArray(b.deliveryCisStoreKeys)
+      ? (b.deliveryCisStoreKeys as unknown[]).map((x) => (typeof x === "string" ? x : String(x)))
+      : undefined,
+    deliverySftpTargetsJson: typeof b.deliverySftpTargetsJson === "string" ? b.deliverySftpTargetsJson : undefined,
+    analyticsReportUrl: typeof b.analyticsReportUrl === "string" ? b.analyticsReportUrl : undefined,
+    analyticsReportMethod: typeof b.analyticsReportMethod === "string" ? b.analyticsReportMethod : undefined,
+    analyticsReportBearer: typeof b.analyticsReportBearer === "string" ? b.analyticsReportBearer : undefined,
+    analyticsReportAuthHeader: typeof b.analyticsReportAuthHeader === "string" ? b.analyticsReportAuthHeader : undefined,
+    analyticsReportAuthValue: typeof b.analyticsReportAuthValue === "string" ? b.analyticsReportAuthValue : undefined,
     status: b.status === "active" || b.status === "archived" || b.status === "draft" ? b.status : undefined,
   });
   if (!out.ok) {
@@ -336,9 +354,25 @@ app.post("/api/isrc/next", (req, res) => {
   res.json({ ok: true, isrc: out.isrc });
 });
 
+/** Cấp UPC Soul (893274 + 6 số thứ tự + check digit EAN-13) — cần phiên đăng nhập. */
+app.post("/api/upc/next", (req, res) => {
+  const tok = getBearerToken(req.headers.authorization);
+  const s = resolveSession(tok);
+  if (!s) {
+    res.status(401).json({ error: "Cần đăng nhập (Authorization: Bearer sessionToken)." });
+    return;
+  }
+  const out = allocateNextSoulUpc();
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, upc: out.upc, sequence: out.sequence });
+});
+
 function senderOpts() {
   return {
-    senderPartyId: process.env.DDEX_MESSAGE_SENDER_PARTY_ID?.trim() ?? "",
+    senderPartyId: defaultSenderPartyId(),
     recipientPartyId: process.env.DDEX_MESSAGE_RECIPIENT_PARTY_ID?.trim() ?? "",
   };
 }
@@ -377,7 +411,9 @@ function parseCatalogBody(body: Record<string, unknown>): import("./types.js").C
 
 app.get("/health", (_req, res) => {
   const analyticsFeed = ["1", "true", "yes"].includes(String(process.env.ANALYTICS_FEED_ENABLED ?? "").trim().toLowerCase());
-  const analyticsPartnerReport = Boolean(process.env.ANALYTICS_PARTNER_REPORT_URL?.trim());
+  const analyticsPartnerReport =
+    Boolean(process.env.ANALYTICS_PARTNER_REPORT_URL?.trim()) ||
+    listDeals().some((d) => d.status === "active" && Boolean(d.analyticsReportUrl?.trim()));
   const analyticsReportMock = ["1", "true", "yes"].includes(String(process.env.ANALYTICS_REPORT_MOCK ?? "").trim().toLowerCase());
   res.json({
     ok: true,
@@ -416,6 +452,11 @@ app.post("/api/analytics/context", (req, res) => {
             .map((s) => s.trim())
             .filter(Boolean)
         : [],
+    hasDeliverySftp: Boolean(d.deliverySftpTargetsJson?.trim()),
+    deliveryCisStoreKeys: Array.isArray(d.deliveryCisStoreKeys)
+      ? d.deliveryCisStoreKeys.filter((k): k is string => typeof k === "string" && k.trim().length > 0)
+      : [],
+    hasAnalyticsReport: Boolean(d.analyticsReportUrl?.trim()),
   }));
   const activeDeals = deals.filter((x) => x.status === "active");
   const reportingTags = new Set<string>();
@@ -539,10 +580,10 @@ app.post("/api/ddex/export/:id", (req, res) => {
   }
   const outputDir = process.env.DDEX_OUTPUT_DIR || "./data/ddex-out";
   const so = senderOpts();
-  if (!so.senderPartyId || !so.recipientPartyId) {
+  if (!so.recipientPartyId) {
     res.status(400).json({
       error:
-        "Thiếu DDEX_MESSAGE_SENDER_PARTY_ID hoặc DDEX_MESSAGE_RECIPIENT_PARTY_ID trong backend/.env — không sinh ERN mặc định từ mã nguồn.",
+        "Thiếu DDEX_MESSAGE_RECIPIENT_PARTY_ID trong backend/.env — không sinh ERN mặc định (người nhận aggregator).",
     });
     return;
   }
@@ -655,8 +696,12 @@ app.post("/api/delivery/push/:id", async (req, res) => {
   const outputDir = process.env.DDEX_OUTPUT_DIR || "./data/ddex-out";
   const writeFiles = String(req.query.writeFiles ?? "1") !== "0";
   const finalize = String(req.query.finalize ?? "") === "1";
+  const sftpBatchFolder =
+    typeof req.query.sftpBatch === "string" && req.query.sftpBatch.trim()
+      ? req.query.sftpBatch.trim()
+      : undefined;
   try {
-    const outcome = await deliverCisRelease(item, { writeFiles, outputDir });
+    const outcome = await deliverCisRelease(item, { writeFiles, outputDir, sftpBatchFolder });
     if (finalize && outcome.ok) {
       updateStatus(item.id, "sent_to_stores");
     }
@@ -665,6 +710,7 @@ app.post("/api/delivery/push/:id", async (req, res) => {
       summary: outcome.summary,
       results: outcome.results,
       files: outcome.files,
+      sftp: outcome.sftp,
       finalized: Boolean(finalize && outcome.ok),
     });
   } catch (e) {
@@ -678,6 +724,8 @@ app.get("/api/delivery/status", (_req, res) => {
     stores: listCisDeliveryConfigured(),
     cisAutoDelivery: (process.env.CIS_AUTO_DELIVERY || "").toLowerCase() === "true",
     sftpConfigured: isSftpDeliveryConfigured(),
+    sftp: sftpConfigPublic(),
+    activeDealCisStoreKeys: cisStoreKeysFromActiveDeals(),
   });
 });
 

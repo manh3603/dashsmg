@@ -382,6 +382,15 @@ export type PartnerDealRow = {
   notes?: string;
   /** CSV cửa hàng / kênh báo cáo gắn deal — phục vụ phân tích đa nguồn. */
   reportingStores?: string;
+  /** Cửa hàng CIS (id) giao DDEX — deal `active` được gộp với storesSelected khi gửi. */
+  deliveryCisStoreKeys?: string[];
+  /** JSON mảng SFTP (định dạng DDEX_SFTP_TARGETS) — merge khi deal `active`. */
+  deliverySftpTargetsJson?: string;
+  analyticsReportUrl?: string;
+  analyticsReportMethod?: string;
+  analyticsReportBearer?: string;
+  analyticsReportAuthHeader?: string;
+  analyticsReportAuthValue?: string;
   status: "draft" | "active" | "archived";
   createdAt: string;
   updatedAt: string;
@@ -395,6 +404,10 @@ export type AnalyticsDealRosterRow = {
   status: PartnerDealRow["status"];
   territory: string | null;
   reportingStores: string[];
+  hasDeliverySftp?: boolean;
+  /** Cửa hàng CIS gắn deal (id) — xem Deal đối tác. */
+  deliveryCisStoreKeys?: string[];
+  hasAnalyticsReport?: boolean;
 };
 
 /** POST /api/analytics/context — đa deal + cửa hàng CIS (cần Bearer). */
@@ -563,6 +576,31 @@ export async function postIsrcNext(
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; isrc?: string; error?: string };
     if (!res.ok || !data.isrc) return { ok: false, error: data.error || res.statusText };
     return { ok: true, isrc: data.isrc };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postUpcNext(
+  sessionToken: string
+): Promise<{ ok: true; upc: string; sequence: number } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/upc/next`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      upc?: string;
+      sequence?: number;
+      error?: string;
+    };
+    if (!res.ok || !data.upc) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, upc: data.upc, sequence: data.sequence ?? 0 };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
   }
@@ -758,7 +796,10 @@ export async function triggerDdexBatch(): Promise<{ ok: boolean; message: string
     const cd = Array.isArray(data.cisDelivery)
       ? ` — CIS API: ${data.cisDelivery.filter((x: { pushed?: boolean }) => x.pushed).length}/${data.cisDelivery.length} gọi OK`
       : "";
-    return { ok: true, message: `Batch DDEX: đã xuất ${n} file XML${sk}${cd}` };
+    const sf = Array.isArray((data as { sftpDelivery?: unknown[] }).sftpDelivery)
+      ? ` — SFTP: ${(data as { sftpDelivery: { ok?: boolean }[] }).sftpDelivery.filter((x) => x.ok).length}/${(data as { sftpDelivery: unknown[] }).sftpDelivery.length} host OK`
+      : "";
+    return { ok: true, message: `Batch DDEX: đã xuất ${n} file XML${sk}${cd}${sf}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Lỗi mạng" };
   }
@@ -794,6 +835,7 @@ export async function postCisDeliveryPush(
       results?: CisDeliveryResultRow[];
       finalized?: boolean;
       error?: string;
+      sftp?: { label: string; host: string; ok: boolean; error?: string }[];
     };
     if (!res.ok) {
       return { ok: false, message: data.error || data.summary || res.statusText };
@@ -807,6 +849,12 @@ export async function postCisDeliveryPush(
     if (skipped.length) message += ` — bỏ qua (chưa cấu URL): ${skipped.map((r) => r.storeKey).join(", ")}`;
     if (data.finalized) message += " — đã chốt sent_to_stores.";
     if (failed.length) message += ` — lỗi: ${failed.map((f) => `${f.storeKey}: ${f.error ?? f.httpStatus}`).join("; ")}`;
+    if (data.sftp?.length) {
+      const okS = data.sftp.filter((x) => x.ok).length;
+      message += ` — SFTP: ${okS}/${data.sftp.length} host OK`;
+      const bad = data.sftp.filter((x) => !x.ok);
+      if (bad.length) message += ` (${bad.map((b) => `${b.label}: ${b.error ?? "lỗi"}`).join("; ")})`;
+    }
     return {
       ok: Boolean(data.ok),
       message,
@@ -821,7 +869,14 @@ export async function postCisDeliveryPush(
 export async function fetchDeliveryStatus(): Promise<{
   cisAutoDelivery: boolean;
   sftpConfigured?: boolean;
+  sftp?: {
+    configured: boolean;
+    targetCount: number;
+    targets: { host: string; port: number; remoteDir: string; label?: string }[];
+  };
   stores: { storeKey: string; hasEndpoint: boolean }[];
+  /** Cửa hàng CIS từ mọi deal đối tác `active` — gộp khi gửi DDEX. */
+  activeDealCisStoreKeys?: string[];
 } | null> {
   const base = baseUrl();
   if (!base) return null;
@@ -831,7 +886,13 @@ export async function fetchDeliveryStatus(): Promise<{
     return (await res.json()) as {
       cisAutoDelivery: boolean;
       sftpConfigured?: boolean;
+      sftp?: {
+        configured: boolean;
+        targetCount: number;
+        targets: { host: string; port: number; remoteDir: string; label?: string }[];
+      };
       stores: { storeKey: string; hasEndpoint: boolean }[];
+      activeDealCisStoreKeys?: string[];
     };
   } catch {
     return null;

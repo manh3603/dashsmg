@@ -22,9 +22,11 @@ import {
   submitReleaseToQC,
 } from "@/lib/smg-storage";
 import {
+  fetchDeliveryStatus,
   isBackendConfigured,
   postCisDeliveryPush,
   postIsrcNext,
+  postUpcNext,
   pushCatalogItemToBackend,
   uploadReleaseAsset,
   type ReleaseTableRow,
@@ -62,8 +64,12 @@ export default function CreateReleaseFlow() {
   const coverInputRef = useRef<HTMLInputElement>(null);
   /** Một lần tự cấp ISRC cho mỗi (editId + bước 4); reset khi lùi khỏi bước 4. */
   const lastIsrcAutoKeyRef = useRef<string | null>(null);
+  /** Album/EP — tự cấp UPC Soul tại bước 4 khi sửa bản ghi trống UPC. */
+  const lastUpcAutoKeyRef = useRef<string | null>(null);
   /** Bài mới + Single: cấp ISRC ngay khi chọn loại (không chờ bước 4). */
   const earlyNewSingleIsrcRef = useRef<string | null>(null);
+  /** Bài mới + Album/EP: cấp UPC Soul ngay khi chọn loại. */
+  const earlyNewAlbumUpcRef = useRef<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
@@ -131,6 +137,7 @@ export default function CreateReleaseFlow() {
   useEffect(() => {
     if (currentStep < 4) {
       lastIsrcAutoKeyRef.current = null;
+      lastUpcAutoKeyRef.current = null;
     }
   }, [currentStep]);
 
@@ -157,6 +164,29 @@ export default function CreateReleaseFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- theo releaseKind / editId; tránh lặp khi gõ ISRC.
   }, [releaseKind, editId]);
 
+  useEffect(() => {
+    if (editId) return;
+    if (releaseKind !== "album_ep") {
+      earlyNewAlbumUpcRef.current = null;
+      return;
+    }
+    if (formData.upc.trim()) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const k = "early-new-album";
+    if (earlyNewAlbumUpcRef.current === k) return;
+    earlyNewAlbumUpcRef.current = k;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        earlyNewAlbumUpcRef.current = null;
+        return;
+      }
+      setFormData((fd) => (fd.upc.trim() ? fd : { ...fd, upc: r.upc }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [releaseKind, editId]);
+
   // Bài đang sửa: bước 4 mới cấp ISRC nếu trống (bài mới đã cấp ở effect «chọn Single»).
   useEffect(() => {
     if (currentStep !== 4 || releaseKind !== "single") return;
@@ -174,6 +204,26 @@ export default function CreateReleaseFlow() {
         return;
       }
       setFormData((fd) => (fd.isrc.trim() ? fd : { ...fd, isrc: r.isrc }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
+
+  useEffect(() => {
+    if (currentStep !== 4 || releaseKind !== "album_ep") return;
+    if (!editId) return;
+    if (formData.upc.trim()) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = `${editId}-step4-upc`;
+    if (lastUpcAutoKeyRef.current === dedupeKey) return;
+    lastUpcAutoKeyRef.current = dedupeKey;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastUpcAutoKeyRef.current = null;
+        return;
+      }
+      setFormData((fd) => (fd.upc.trim() ? fd : { ...fd, upc: r.upc }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, releaseKind, editId]);
@@ -298,6 +348,25 @@ export default function CreateReleaseFlow() {
     setFormData((fd) => ({ ...fd, isrc: r.isrc }));
   };
 
+  const fetchNextUpc = async () => {
+    if (!isBackendConfigured()) {
+      setUploadErr("Cần backend để cấp UPC. Chạy «npm run dev:all» hoặc đăng nhập lại để lấy phiên API.");
+      return;
+    }
+    const tok = getApiSessionToken();
+    if (!tok) {
+      setUploadErr("Đăng xuất và đăng nhập lại để cấp UPC tự động từ kho hệ thống.");
+      return;
+    }
+    setUploadErr(null);
+    const r = await postUpcNext(tok);
+    if (!r.ok) {
+      setUploadErr(r.error);
+      return;
+    }
+    setFormData((fd) => ({ ...fd, upc: r.upc }));
+  };
+
   const runCoverUpload = async (file: File) => {
     if (!isBackendConfigured()) {
       setUploadErr("Cần backend: chạy «npm run dev:all» để upload ảnh bìa.");
@@ -364,15 +433,20 @@ export default function CreateReleaseFlow() {
         backendSynced = pr.ok;
         backendError = pr.error;
         if (pr.ok && pr.table?.length) table = pr.table;
-        if (pr.ok && item.storesSelected?.some((s) => isCisStoreId(s))) {
-          const d = await postCisDeliveryPush(item.id, { finalize: true, writeFiles: true });
-          deliveryNote = d.ok
-            ? "Đã gửi metadata (DDEX) lên các cửa hàng đã cấu hình trên server."
-            : `Gửi cửa hàng chưa hoàn tất: ${d.message}`;
-          deliveryWarning = !d.ok;
-        } else if (pr.ok) {
-          deliveryNote =
-            "Không có cửa hàng DDEX (CIS / Zing MP3…) trong lựa chọn — chỉ lưu hệ thống, không gửi metadata tự động.";
+        if (pr.ok) {
+          const hasArtistCis = item.storesSelected?.some((s) => isCisStoreId(s));
+          const deliveryMeta = await fetchDeliveryStatus();
+          const hasDealCis = Boolean(deliveryMeta?.activeDealCisStoreKeys?.length);
+          if (hasArtistCis || hasDealCis) {
+            const d = await postCisDeliveryPush(item.id, { finalize: true, writeFiles: true });
+            deliveryNote = d.ok
+              ? "Đã gửi metadata (DDEX) lên các cửa hàng đã cấu hình trên server."
+              : `Gửi cửa hàng chưa hoàn tất: ${d.message}`;
+            deliveryWarning = !d.ok;
+          } else {
+            deliveryNote =
+              "Không có cửa hàng DDEX (CIS) trong lựa chọn và không có cửa hàng nào từ deal đối tác đang hiệu lực — chỉ lưu hệ thống, không gửi metadata tự động.";
+          }
         }
       }
       setIsLoading(false);
@@ -396,6 +470,26 @@ export default function CreateReleaseFlow() {
       ...f,
       stores: { ...f.stores, [key]: !f.stores[key] },
     }));
+  };
+
+  const setAllStores = (selected: boolean) => {
+    setFormData((f) => {
+      const next = { ...f.stores };
+      for (const o of getActiveStoreOptions()) {
+        next[o.id] = selected;
+      }
+      return { ...f, stores: next };
+    });
+  };
+
+  const selectAllDdexPartners = () => {
+    setFormData((f) => {
+      const next = { ...f.stores };
+      for (const o of getActiveStoreOptions()) {
+        if (isCisStoreId(o.id)) next[o.id] = true;
+      }
+      return { ...f, stores: next };
+    });
   };
 
   return (
@@ -818,12 +912,26 @@ export default function CreateReleaseFlow() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  UPC/GTIN {releaseKind === "album_ep" ? "*" : ""}
-                </label>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    UPC/GTIN {releaseKind === "album_ep" ? "*" : ""}
+                  </label>
+                  {releaseKind === "album_ep" && (
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextUpc()}
+                      className="text-xs font-medium text-violet-700 underline decoration-violet-300 hover:text-violet-900"
+                    >
+                      Lấy UPC Soul (893274 + EAN-13)
+                    </button>
+                  )}
+                </div>
+                <p className="mb-2 text-xs text-slate-500">
+                  Album/EP: GTIN-13 — 893 (VN) + 274 (Soul) + Item Reference 000001–999999 + số kiểm EAN-13. Tự điền khi chọn Album (có phiên API) giống ISRC cho Single.
+                </p>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
-                  placeholder="12–13 chữ số"
+                  placeholder="13 chữ số (EAN-13)"
                   value={formData.upc}
                   onChange={(e) => setFormData({ ...formData, upc: e.target.value })}
                 />
@@ -836,9 +944,32 @@ export default function CreateReleaseFlow() {
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-slate-900">Bước 4 — Cửa hàng & khu vực</h3>
             <p className="text-sm text-slate-500">
-              Chọn nền tảng. Cửa hàng <strong>DDEX đối tác</strong> (CIS, Zing MP3…) được gửi metadata khi hoàn tất nếu backend đã cấu{" "}
-              <code className="rounded bg-slate-100 px-1 text-xs">CIS_DELIVERY_*_URL</code>.
+              Chọn nền tảng bằng danh sách tích chọn. Backend đẩy DDEX qua HTTP (nếu có <code className="rounded bg-slate-100 px-1 text-xs">CIS_DELIVERY_*_URL</code>) và
+              lên <strong>mọi</strong> tài khoản SFTP đã cấu hình trên server.
             </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => selectAllDdexPartners()}
+                className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100"
+              >
+                Chọn tất cả đối tác DDEX
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllStores(true)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+              >
+                Chọn tất cả cửa hàng
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllStores(false)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Bỏ chọn hết
+              </button>
+            </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Đối tác DDEX (CIS, Zing MP3…)</label>
               {getActiveStoreOptions().filter((o) => isCisStoreId(o.id)).length === 0 ? (
@@ -846,42 +977,52 @@ export default function CreateReleaseFlow() {
                   Quản trị cần thêm &amp; bật ít nhất một cửa hàng DDEX trong mục Cửa hàng &amp; CMS (ví dụ Zing MP3, VK…).
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-slate-50/50">
                   {getActiveStoreOptions()
                     .filter((o) => isCisStoreId(o.id))
                     .map(({ id, name }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => toggleStore(id)}
-                        className={`rounded-full px-4 py-2 text-sm font-medium ${
-                          formData.stores[id] ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                      >
-                        {name}
-                      </button>
+                      <li key={id} className="flex items-center gap-3 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          id={`store-ddex-${id}`}
+                          className="h-4 w-4 accent-violet-600"
+                          checked={Boolean(formData.stores[id])}
+                          onChange={() => toggleStore(id)}
+                        />
+                        <label htmlFor={`store-ddex-${id}`} className="flex-1 cursor-pointer text-sm text-slate-800">
+                          <span className="font-medium">{name}</span>{" "}
+                          <code className="ml-1 rounded bg-white px-1 text-xs text-slate-500">{id}</code>
+                        </label>
+                      </li>
                     ))}
-                </div>
+                </ul>
               )}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Cửa hàng khác</label>
-              <div className="flex flex-wrap gap-2">
-                {getActiveStoreOptions()
-                  .filter((o) => !isCisStoreId(o.id))
-                  .map(({ id, name }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => toggleStore(id)}
-                      className={`rounded-full px-4 py-2 text-sm font-medium ${
-                        formData.stores[id] ? "bg-cyan-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {name}
-                    </button>
-                  ))}
-              </div>
+              {getActiveStoreOptions().filter((o) => !isCisStoreId(o.id)).length === 0 ? (
+                <p className="text-sm text-slate-500">Chưa có cửa hàng khác được bật.</p>
+              ) : (
+                <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-slate-50/50">
+                  {getActiveStoreOptions()
+                    .filter((o) => !isCisStoreId(o.id))
+                    .map(({ id, name }) => (
+                      <li key={id} className="flex items-center gap-3 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          id={`store-other-${id}`}
+                          className="h-4 w-4 accent-cyan-600"
+                          checked={Boolean(formData.stores[id])}
+                          onChange={() => toggleStore(id)}
+                        />
+                        <label htmlFor={`store-other-${id}`} className="flex-1 cursor-pointer text-sm text-slate-800">
+                          <span className="font-medium">{name}</span>{" "}
+                          <code className="ml-1 rounded bg-white px-1 text-xs text-slate-500">{id}</code>
+                        </label>
+                      </li>
+                    ))}
+                </ul>
+              )}
             </div>
             <div>
               <label className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-700">

@@ -2,6 +2,7 @@
  * Chạy backend (tsx watch) + Next dev — gọi trực tiếp `node` + CLI (ổn định trên Windows, tránh npm spawn lồng).
  * Thứ tự: kill cổng 3001 → backend → chờ /health → Next.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -30,7 +31,21 @@ await new Promise((resolve) => {
   k.on("close", () => resolve());
 });
 
-const tsxCli = path.join(backendRoot, "node_modules", "tsx", "dist", "cli.mjs");
+/** Workspaces thường hoist `tsx` lên `node_modules` gốc — thử backend trước, rồi root. */
+function resolveTsxCli() {
+  const candidates = [
+    path.join(backendRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+    path.join(root, "node_modules", "tsx", "dist", "cli.mjs"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(
+    "Không tìm thấy tsx (dev dependency backend). Chạy `npm install` tại thư mục gốc repo (D:\\music-dashboard)."
+  );
+}
+
+const tsxCli = resolveTsxCli();
 const backend = spawn(process.execPath, [tsxCli, "watch", "src/index.ts"], {
   cwd: backendRoot,
   stdio: "inherit",

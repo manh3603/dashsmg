@@ -137,7 +137,8 @@ export default function AdminQcPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Kiểm duyệt & QC</h1>
           <p className="mt-1 text-slate-600">
-            Duyệt nội bộ trước khi đẩy metadata tới các cửa hàng đã bật trong CMS — chỉnh trạng thái vòng đời phát hành.
+            Duyệt nội bộ trước khi đẩy metadata tới các cửa hàng đã bật trong CMS — chỉnh trạng thái vòng đời phát hành. Khi chạy gửi DDEX (HTTP/SFTP), backend còn{" "}
+            <strong className="font-medium">cộng thêm</strong> các cửa hàng CIS gắn deal đối tác đang «Đang hiệu lực» (Deal đối tác → mục giao CIS), ngoài cột «Cửa hàng chọn» của nghệ sĩ.
           </p>
           {pageSyncWarning && (
             <div className="mt-4 flex flex-wrap items-start justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">

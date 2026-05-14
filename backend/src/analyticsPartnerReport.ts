@@ -1,8 +1,9 @@
 /**
- * Gọi API báo cáo đối tác (server → server) — URL cấu hình bằng biến môi trường.
- * JSON mẫu hỗ trợ: { "byStore": [{ "storeName": "Zing MP3", "streams": 1200000 }] }
- * hoặc { "stores": [{ "name": "Spotify", "streamCount": 500 }] } — normalizer bên dưới.
+ * Gọi API báo cáo đối tác — URL từ env (ANALYTICS_PARTNER_REPORT_URL) và từng deal active (analyticsReportUrl).
+ * JSON mẫu: { "byStore": [{ "storeName": "Zing MP3", "streams": 1200000 }] } …
  */
+
+import { listDeals } from "./dealsStore.js";
 
 export type StoreStreamRow = {
   storeName: string;
@@ -36,8 +37,7 @@ function pickNumber(obj: Record<string, unknown>, keys: string[]): number | unde
 }
 
 function extractAsOf(root: Record<string, unknown>): string | undefined {
-  const v = pickString(root, ["asOf", "updatedAt", "generatedAt", "period", "snapshotAt"]);
-  return v;
+  return pickString(root, ["asOf", "updatedAt", "generatedAt", "period", "snapshotAt"]);
 }
 
 function normalizeStoresArray(arr: unknown[]): StoreStreamRow[] {
@@ -73,6 +73,83 @@ function analyticsReportMockEnabled(): boolean {
   return ["1", "true", "yes"].includes(String(process.env.ANALYTICS_REPORT_MOCK ?? "").trim().toLowerCase());
 }
 
+type FetchSource = {
+  label: string;
+  url: string;
+  method: "GET" | "POST";
+  headers: Record<string, string>;
+};
+
+async function fetchOnePartnerJson(
+  src: FetchSource,
+  timeoutMs: number
+): Promise<{ ok: true; stores: StoreStreamRow[]; asOf?: string } | { ok: false; error: string }> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(src.url, { method: src.method, headers: src.headers, signal: ac.signal });
+    clearTimeout(timer);
+    if (!res.ok) return { ok: false, error: `${src.label}: HTTP ${res.status}` };
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      return { ok: false, error: `${src.label}: không phải JSON` };
+    }
+    const root = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const asOf = extractAsOf(root);
+    const stores = normalizePartnerJson(body);
+    return { ok: true, stores, asOf };
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = e instanceof Error ? (e.name === "AbortError" ? "hết thời gian chờ" : e.message) : "lỗi gọi API";
+    return { ok: false, error: `${src.label}: ${msg}` };
+  }
+}
+
+function mergeStoreRows(rows: StoreStreamRow[]): StoreStreamRow[] {
+  const map = new Map<string, StoreStreamRow>();
+  for (const r of rows) {
+    const key = `${(r.storeKey ?? "").toLowerCase()}|${r.storeName.trim().toLowerCase()}`;
+    const prev = map.get(key);
+    if (!prev) map.set(key, { ...r });
+    else map.set(key, { ...prev, streams: prev.streams + r.streams });
+  }
+  return [...map.values()].sort((a, b) => b.streams - a.streams);
+}
+
+function buildAnalyticsSources(): FetchSource[] {
+  const out: FetchSource[] = [];
+  const envUrl = process.env.ANALYTICS_PARTNER_REPORT_URL?.trim();
+  if (envUrl) {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    const bearer = process.env.ANALYTICS_PARTNER_BEARER?.trim();
+    if (bearer) headers.Authorization = bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`;
+    const authHeader = process.env.ANALYTICS_PARTNER_AUTH_HEADER?.trim();
+    const authValue = process.env.ANALYTICS_PARTNER_AUTH_VALUE?.trim();
+    if (authHeader && authValue) headers[authHeader] = authValue;
+    const method =
+      process.env.ANALYTICS_PARTNER_REPORT_METHOD?.trim().toUpperCase() === "POST" ? "POST" : "GET";
+    out.push({ label: "env", url: envUrl, method, headers });
+  }
+
+  for (const d of listDeals()) {
+    if (d.status !== "active") continue;
+    const u = d.analyticsReportUrl?.trim();
+    if (!u) continue;
+    const headers: Record<string, string> = { Accept: "application/json" };
+    const b = d.analyticsReportBearer?.trim();
+    if (b) headers.Authorization = b.startsWith("Bearer ") ? b : `Bearer ${b}`;
+    const ah = d.analyticsReportAuthHeader?.trim();
+    const av = d.analyticsReportAuthValue?.trim();
+    if (ah && av) headers[ah] = av;
+    const method = d.analyticsReportMethod?.trim().toUpperCase() === "POST" ? "POST" : "GET";
+    out.push({ label: d.partnerName, url: u, method, headers });
+  }
+
+  return out;
+}
+
 export async function fetchPartnerAnalyticsReport(): Promise<PartnerAnalyticsReport> {
   if (analyticsReportMockEnabled()) {
     return {
@@ -87,58 +164,39 @@ export async function fetchPartnerAnalyticsReport(): Promise<PartnerAnalyticsRep
     };
   }
 
-  const url = process.env.ANALYTICS_PARTNER_REPORT_URL?.trim();
-  if (!url) {
+  const sources = buildAnalyticsSources();
+  if (!sources.length) {
     return { configured: false, fetchOk: false, stores: [] };
   }
 
   const timeoutMs = Math.min(Math.max(Number(process.env.ANALYTICS_PARTNER_TIMEOUT_MS ?? 20000) || 20000, 3000), 120000);
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const merged: StoreStreamRow[] = [];
+  const errors: string[] = [];
+  let latestAsOf: string | undefined;
 
-  const headers: Record<string, string> = { Accept: "application/json" };
-  const bearer = process.env.ANALYTICS_PARTNER_BEARER?.trim();
-  if (bearer) headers.Authorization = bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`;
-  const authHeader = process.env.ANALYTICS_PARTNER_AUTH_HEADER?.trim();
-  const authValue = process.env.ANALYTICS_PARTNER_AUTH_VALUE?.trim();
-  if (authHeader && authValue) headers[authHeader] = authValue;
-
-  const method = process.env.ANALYTICS_PARTNER_REPORT_METHOD?.trim().toUpperCase() === "POST" ? "POST" : "GET";
-
-  try {
-    const res = await fetch(url, { method, headers, signal: ac.signal });
-    clearTimeout(timer);
-    if (!res.ok) {
-      return {
-        configured: true,
-        fetchOk: false,
-        stores: [],
-        error: `Đối tác trả HTTP ${res.status}`,
-      };
+  for (const src of sources) {
+    const r = await fetchOnePartnerJson(src, timeoutMs);
+    if (!r.ok) {
+      errors.push(r.error);
+      continue;
     }
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      return {
-        configured: true,
-        fetchOk: false,
-        stores: [],
-        error: "Phản hồi không phải JSON",
-      };
-    }
-    const root = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-    const asOf = extractAsOf(root);
-    const stores = normalizePartnerJson(body);
-    return { configured: true, fetchOk: true, stores, asOf };
-  } catch (e) {
-    clearTimeout(timer);
-    const msg = e instanceof Error ? (e.name === "AbortError" ? "Hết thời gian chờ đối tác" : e.message) : "Lỗi gọi API";
+    merged.push(...r.stores);
+    if (r.asOf && (!latestAsOf || r.asOf > latestAsOf)) latestAsOf = r.asOf;
+  }
+
+  if (errors.length && merged.length === 0) {
     return {
       configured: true,
       fetchOk: false,
       stores: [],
-      error: msg,
+      error: errors.join(" | "),
     };
   }
+
+  return {
+    configured: true,
+    fetchOk: true,
+    stores: mergeStoreRows(merged),
+    asOf: latestAsOf ?? new Date().toISOString(),
+  };
 }

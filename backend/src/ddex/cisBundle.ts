@@ -3,19 +3,45 @@ import path from "node:path";
 import archiver from "archiver";
 import type { Response } from "express";
 import type { CatalogItem } from "../types.js";
+import { listDeals } from "../dealsStore.js";
 import { buildDdexNewReleaseMessage, ddexErnFileSuffix } from "./ddexReleaseMessage.js";
 import { loadCisRecipients } from "./cisParties.js";
 import { isCisStoreKey, type CisStoreKey } from "./cisStores.js";
 import { territoryCodesForItem, validateCisExport } from "./validateCis.js";
+import { defaultSenderPartyId } from "./soulDpid.js";
 
 export type CisBundleFile = { storeKey: string; filename: string; path: string };
 export type CisXmlPayload = { storeKey: CisStoreKey; filename: string; xml: string };
 
 function sender(): { partyId: string; name: string } {
   return {
-    partyId: process.env.DDEX_MESSAGE_SENDER_PARTY_ID?.trim() ?? "",
-    name: process.env.DDEX_MESSAGE_SENDER_NAME?.trim() || "SMG Distribution",
+    partyId: defaultSenderPartyId(),
+    name: process.env.DDEX_MESSAGE_SENDER_NAME?.trim() || "Soul Music",
   };
+}
+
+/** Union: cửa hàng nghệ sĩ chọn + cửa hàng gắn mọi deal đối tác `active` (trường deliveryCisStoreKeys). */
+export function effectiveCisStoreSelection(item: CatalogItem): CisStoreKey[] {
+  const fromRelease = (item.storesSelected ?? []).filter(isCisStoreKey);
+  const fromDeals: CisStoreKey[] = [];
+  for (const d of listDeals()) {
+    if (d.status !== "active") continue;
+    const keys = d.deliveryCisStoreKeys;
+    if (!Array.isArray(keys)) continue;
+    for (const k of keys) {
+      if (!isCisStoreKey(k)) continue;
+      if (fromDeals.includes(k)) continue;
+      fromDeals.push(k);
+    }
+  }
+  const seen = new Set<string>();
+  const out: CisStoreKey[] = [];
+  for (const k of [...fromRelease, ...fromDeals]) {
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }
 
 /** Sinh XML ERN 4.3 cho từng cửa hàng CIS (không ghi đĩa) — dùng cho ZIP, gửi API, v.v. */
@@ -25,23 +51,19 @@ export function buildCisDdexPayloads(
   const v = validateCisExport(item);
   if (!v.ok) return v;
 
-  const selected = (item.storesSelected ?? []).filter(isCisStoreKey);
+  const selected = effectiveCisStoreSelection(item);
   if (!selected.length) {
     return {
       ok: false,
-      errors: ["Chưa chọn cửa hàng DDEX nào (vk_music, yandex_music, zvuk, kion_music, zing_mp3)."],
+      errors: [
+        "Chưa có cửa hàng DDEX để giao: nghệ sĩ chưa chọn (vk_music, yandex_music, zvuk, kion_music, zing_mp3) và không có cửa hàng nào từ deal đối tác đang «Đang hiệu lực».",
+      ],
     };
   }
 
   const recipients = loadCisRecipients();
   const territories = territoryCodesForItem(item);
   const s = sender();
-  if (!s.partyId) {
-    return {
-      ok: false,
-      errors: ["Thiếu DDEX_MESSAGE_SENDER_PARTY_ID trong backend/.env — bắt buộc để sinh ERN CIS."],
-    };
-  }
   const safeId = item.id.replace(/[^a-zA-Z0-9_-]/g, "_");
   const payloads: CisXmlPayload[] = [];
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isCisStoreKey, type CisStoreKey } from "./ddex/cisStores.js";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DEALS_FILE = path.join(DATA_DIR, "partner-deals.json");
@@ -20,6 +21,19 @@ export type PartnerDeal = {
   notes?: string;
   /** Danh sách cửa hàng / kênh báo cáo gắn deal (CSV, ví dụ: Zing MP3, Spotify aggregator) — dùng cho pipeline phân tích đa nguồn. */
   reportingStores?: string;
+  /**
+   * Cửa hàng CIS giao DDEX (id: zing_mp3, vk_music, …) — chỉ deal `active`.
+   * Khi build ERN / gửi HTTP+SFTP, backend gộp (union) với `storesSelected` của bản phát hành.
+   */
+  deliveryCisStoreKeys?: string[];
+  /** JSON mảng SFTP (cùng định dạng DDEX_SFTP_TARGETS) — merge với env khi gửi DDEX; chỉ deal `active`. */
+  deliverySftpTargetsJson?: string;
+  /** URL JSON báo cáo stream từ đối tác / store (GET hoặc POST). */
+  analyticsReportUrl?: string;
+  analyticsReportMethod?: string;
+  analyticsReportBearer?: string;
+  analyticsReportAuthHeader?: string;
+  analyticsReportAuthValue?: string;
   status: PartnerDealStatus;
   createdAt: string;
   updatedAt: string;
@@ -46,8 +60,35 @@ function writeAll(items: PartnerDeal[]) {
   fs.writeFileSync(DEALS_FILE, JSON.stringify(items, null, 2), "utf8");
 }
 
+function normalizeDeliveryCisStoreKeys(raw?: string[] | null): string[] | undefined {
+  if (!raw || !Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of raw) {
+    const k = typeof x === "string" ? x.trim() : "";
+    if (!k || !isCisStoreKey(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out.length ? out : undefined;
+}
+
 export function listDeals(): PartnerDeal[] {
   return readAll().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Mọi mã cửa hàng CIS gắn deal đang `active` (dedupe) — dùng cho delivery / UI. */
+export function cisStoreKeysFromActiveDeals(): CisStoreKey[] {
+  const out: CisStoreKey[] = [];
+  for (const d of listDeals()) {
+    if (d.status !== "active") continue;
+    for (const k of d.deliveryCisStoreKeys ?? []) {
+      if (!isCisStoreKey(k)) continue;
+      if (out.includes(k)) continue;
+      out.push(k);
+    }
+  }
+  return out;
 }
 
 export function upsertDeal(input: {
@@ -61,6 +102,13 @@ export function upsertDeal(input: {
   contactEmail?: string;
   notes?: string;
   reportingStores?: string;
+  deliveryCisStoreKeys?: string[];
+  deliverySftpTargetsJson?: string;
+  analyticsReportUrl?: string;
+  analyticsReportMethod?: string;
+  analyticsReportBearer?: string;
+  analyticsReportAuthHeader?: string;
+  analyticsReportAuthValue?: string;
   status?: PartnerDealStatus;
 }): { ok: true; deal: PartnerDeal } | { ok: false; error: string } {
   const name = input.partnerName?.trim();
@@ -87,6 +135,34 @@ export function upsertDeal(input: {
       input.reportingStores !== undefined
         ? input.reportingStores.trim() || undefined
         : prev?.reportingStores,
+    deliveryCisStoreKeys:
+      input.deliveryCisStoreKeys !== undefined
+        ? normalizeDeliveryCisStoreKeys(input.deliveryCisStoreKeys)
+        : prev?.deliveryCisStoreKeys,
+    deliverySftpTargetsJson:
+      input.deliverySftpTargetsJson !== undefined
+        ? input.deliverySftpTargetsJson.trim() || undefined
+        : prev?.deliverySftpTargetsJson,
+    analyticsReportUrl:
+      input.analyticsReportUrl !== undefined
+        ? input.analyticsReportUrl.trim() || undefined
+        : prev?.analyticsReportUrl,
+    analyticsReportMethod:
+      input.analyticsReportMethod !== undefined
+        ? input.analyticsReportMethod.trim() || undefined
+        : prev?.analyticsReportMethod,
+    analyticsReportBearer:
+      input.analyticsReportBearer !== undefined
+        ? input.analyticsReportBearer.trim() || undefined
+        : prev?.analyticsReportBearer,
+    analyticsReportAuthHeader:
+      input.analyticsReportAuthHeader !== undefined
+        ? input.analyticsReportAuthHeader.trim() || undefined
+        : prev?.analyticsReportAuthHeader,
+    analyticsReportAuthValue:
+      input.analyticsReportAuthValue !== undefined
+        ? input.analyticsReportAuthValue.trim() || undefined
+        : prev?.analyticsReportAuthValue,
     status,
     createdAt: prev?.createdAt ?? now,
     updatedAt: now,

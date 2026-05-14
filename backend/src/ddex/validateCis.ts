@@ -1,4 +1,5 @@
 import type { CatalogItem } from "../types.js";
+import { isValidEan13 } from "../metadata/ean13.js";
 
 export type CisValidation = { ok: true } | { ok: false; errors: string[] };
 
@@ -21,7 +22,7 @@ function normalizeGtin(s: string): string {
 
 function isLikelyGtin13(s: string): boolean {
   const d = normalizeGtin(s);
-  return /^\d{12,13}$/.test(d);
+  return /^\d{12}$/.test(d) || /^\d{13}$/.test(d);
 }
 
 /** ISRC: 12 ký tự theo mẫu quốc tế (lỏng) */
@@ -44,6 +45,11 @@ export function validateCisExport(item: CatalogItem): CisValidation {
   } else {
     if (!isLikelyGtin13(clean(item.upc)) || isPlaceholderUpc(clean(item.upc))) {
       errors.push("Album/EP: cần UPC/GTIN-13 (12–13 chữ số).");
+    } else {
+      const g = normalizeGtin(clean(item.upc));
+      if (/^\d{13}$/.test(g) && !isValidEan13(g)) {
+        errors.push("Album/EP: UPC 13 chữ số không đúng số kiểm EAN-13 (check digit).");
+      }
     }
   }
 

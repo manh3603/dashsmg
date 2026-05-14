@@ -57,4 +57,6 @@ export type DdexBatchResult = {
   skipped?: { releaseId: string; reason: string }[];
   /** Có khi CIS_AUTO_DELIVERY=true và đã thử gửi HTTP */
   cisDelivery?: CisDeliveryAuditRow[];
+  /** Đẩy SFTP (mọi host cấu hình) */
+  sftpDelivery?: { releaseId: string; label: string; host: string; ok: boolean; error?: string }[];
 };

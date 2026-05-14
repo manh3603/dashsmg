@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type { CatalogItem } from "../types.js";
 import type { DdexMessageOpts } from "./ddexMessageOpts.js";
+import { buildEan13From12, isValidEan13 } from "../metadata/ean13.js";
 
 const NS = "http://ddex.net/xml/ern/43";
 
@@ -21,10 +22,15 @@ function esc(s: string): string {
 }
 
 function releaseIdBlock(item: CatalogItem): string {
-  const upc = item.upc?.replace(/\s/g, "") ?? "";
+  let upc = item.upc?.replace(/\s/g, "") ?? "";
   const isrc = item.isrc?.replace(/[-\s]/g, "") ?? "";
-  if (item.type === "Album/EP" && /^\d{12,13}$/.test(upc)) {
-    return `<ICPN IsEan="true">${esc(upc)}</ICPN>`;
+  if (item.type === "Album/EP") {
+    if (/^\d{12}$/.test(upc)) {
+      upc = buildEan13From12(upc);
+    }
+    if (/^\d{13}$/.test(upc) && isValidEan13(upc)) {
+      return `<ICPN IsEan="true">${esc(upc)}</ICPN>`;
+    }
   }
   if (item.type === "Single" && isrc.length >= 12) {
     return `<ISRC>${esc(item.isrc!.trim())}</ISRC>`;
@@ -120,6 +126,11 @@ export function buildErn43NewReleaseMessage(item: CatalogItem, opts: DdexMessage
     <Party>
       <PartyReference>${partyLabel}</PartyReference>
       <PartyName FullName="${label}"/>
+    </Party>
+    <Party>
+      <PartyReference>PARTY_SOUL_SENDER</PartyReference>
+      <PartyId IsDPID="true">${esc(opts.senderPartyId)}</PartyId>
+      <PartyName FullName="${esc(opts.senderName)}"/>
     </Party>
   </PartyList>
   <ResourceList>
