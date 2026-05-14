@@ -70,6 +70,9 @@ export default function CreateReleaseFlow() {
   const earlyNewSingleIsrcRef = useRef<string | null>(null);
   /** Bài mới + Album/EP: cấp UPC Soul ngay khi chọn loại. */
   const earlyNewAlbumUpcRef = useRef<string | null>(null);
+  /** Bài mới tại bước 4: bổ sung ISRC/UPC nếu bước đầu bỏ sót (chưa có phiên API / backend). */
+  const lastNewSingleStep4IsrcRef = useRef<string | null>(null);
+  const lastNewAlbumStep4UpcRef = useRef<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
@@ -138,6 +141,8 @@ export default function CreateReleaseFlow() {
     if (currentStep < 4) {
       lastIsrcAutoKeyRef.current = null;
       lastUpcAutoKeyRef.current = null;
+      lastNewSingleStep4IsrcRef.current = null;
+      lastNewAlbumStep4UpcRef.current = null;
     }
   }, [currentStep]);
 
@@ -147,7 +152,7 @@ export default function CreateReleaseFlow() {
       earlyNewSingleIsrcRef.current = null;
       return;
     }
-    if (formData.isrc.trim()) return;
+    if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
@@ -159,9 +164,11 @@ export default function CreateReleaseFlow() {
         earlyNewSingleIsrcRef.current = null;
         return;
       }
-      setFormData((fd) => (fd.isrc.trim() ? fd : { ...fd, isrc: r.isrc }));
+      setFormData((fd) =>
+        isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
+      );
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- theo releaseKind / editId; tránh lặp khi gõ ISRC.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khi đổi loại phát hành / chế độ sửa
   }, [releaseKind, editId]);
 
   useEffect(() => {
@@ -170,7 +177,7 @@ export default function CreateReleaseFlow() {
       earlyNewAlbumUpcRef.current = null;
       return;
     }
-    if (formData.upc.trim()) return;
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
@@ -182,16 +189,61 @@ export default function CreateReleaseFlow() {
         earlyNewAlbumUpcRef.current = null;
         return;
       }
-      setFormData((fd) => (fd.upc.trim() ? fd : { ...fd, upc: r.upc }));
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
+      );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [releaseKind, editId]);
+
+  // Bài mới: đến bước 4 vẫn thiếu ISRC/UPC hợp lệ → thử cấp lại (phiên API có thể có sau bước upload).
+  useEffect(() => {
+    if (currentStep !== 4 || editId || releaseKind !== "single") return;
+    if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = "new-step4-isrc";
+    if (lastNewSingleStep4IsrcRef.current === dedupeKey) return;
+    lastNewSingleStep4IsrcRef.current = dedupeKey;
+    void postIsrcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastNewSingleStep4IsrcRef.current = null;
+        return;
+      }
+      setFormData((fd) =>
+        isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
+
+  useEffect(() => {
+    if (currentStep !== 4 || editId || releaseKind !== "album_ep") return;
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = "new-step4-upc";
+    if (lastNewAlbumStep4UpcRef.current === dedupeKey) return;
+    lastNewAlbumStep4UpcRef.current = dedupeKey;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastNewAlbumStep4UpcRef.current = null;
+        return;
+      }
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
 
   // Bài đang sửa: bước 4 mới cấp ISRC nếu trống (bài mới đã cấp ở effect «chọn Single»).
   useEffect(() => {
     if (currentStep !== 4 || releaseKind !== "single") return;
     if (!editId) return;
-    if (formData.isrc.trim()) return;
+    if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
@@ -203,7 +255,9 @@ export default function CreateReleaseFlow() {
         lastIsrcAutoKeyRef.current = null;
         return;
       }
-      setFormData((fd) => (fd.isrc.trim() ? fd : { ...fd, isrc: r.isrc }));
+      setFormData((fd) =>
+        isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
+      );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, releaseKind, editId]);
@@ -211,7 +265,7 @@ export default function CreateReleaseFlow() {
   useEffect(() => {
     if (currentStep !== 4 || releaseKind !== "album_ep") return;
     if (!editId) return;
-    if (formData.upc.trim()) return;
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
     if (!isBackendConfigured()) return;
     const tok = getApiSessionToken();
     if (!tok) return;
@@ -223,7 +277,9 @@ export default function CreateReleaseFlow() {
         lastUpcAutoKeyRef.current = null;
         return;
       }
-      setFormData((fd) => (fd.upc.trim() ? fd : { ...fd, upc: r.upc }));
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
+      );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, releaseKind, editId]);
@@ -326,6 +382,32 @@ export default function CreateReleaseFlow() {
     if (r.url) {
       setFormData((fd) => ({ ...fd, audioAssetUrl: r.url! }));
       setAudioFileLabel(file.name);
+    }
+    const tok = getApiSessionToken();
+    if (tok && r.url && isBackendConfigured()) {
+      if (releaseKind === "album_ep") {
+        const needUpc = isPlaceholderUpc(formData.upc) || !isValidUpcGtin(formData.upc);
+        if (needUpc) {
+          const ur = await postUpcNext(tok);
+          if (ur.ok) {
+            setFormData((fd) =>
+              isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: ur.upc }
+            );
+            earlyNewAlbumUpcRef.current = "early-new-album";
+          }
+        }
+      } else if (releaseKind === "single") {
+        const needIsrc = isPlaceholderIsrc(formData.isrc) || !isValidIsrc(formData.isrc);
+        if (needIsrc) {
+          const ir = await postIsrcNext(tok);
+          if (ir.ok) {
+            setFormData((fd) =>
+              isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: ir.isrc }
+            );
+            earlyNewSingleIsrcRef.current = "early-new-single";
+          }
+        }
+      }
     }
   };
 
@@ -902,7 +984,7 @@ export default function CreateReleaseFlow() {
                   )}
                 </div>
                 <p className="mb-2 text-xs text-slate-500">
-                  Single: ISRC được cấp tự động ngay khi chọn loại phát hành (bài mới) và bổ sung ở bước này nếu cần — cần đăng nhập có phiên API.
+                  Single: ISRC được cấp khi chọn loại, sau khi upload file âm thanh, hoặc tại bước này nếu vẫn trống — cần đăng nhập có phiên API.
                 </p>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
@@ -927,7 +1009,7 @@ export default function CreateReleaseFlow() {
                   )}
                 </div>
                 <p className="mb-2 text-xs text-slate-500">
-                  Album/EP: GTIN-13 — 893 (VN) + 274 (Soul) + Item Reference 000001–999999 + số kiểm EAN-13. Tự điền khi chọn Album (có phiên API) giống ISRC cho Single.
+                  Album/EP: GTIN-13 — 893 (VN) + 274 (Soul) + Item Reference 000001–999999 + số kiểm EAN-13. Tự điền khi chọn Album, sau khi upload file âm thanh thành công, hoặc khi vào bước này (cần phiên API).
                 </p>
                 <input
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
