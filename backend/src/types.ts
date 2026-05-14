@@ -9,6 +9,14 @@ export type ReleaseStatus =
   | "takedown"
   | "pending";
 
+/** Track album — mỗi dòng một file master + ISRC (DDEX nhiều SoundRecording). */
+export type CatalogAlbumTrack = {
+  audioAssetUrl: string;
+  isrc?: string;
+  title?: string;
+  filename?: string;
+};
+
 export type CatalogItem = {
   id: string;
   title: string;
@@ -30,6 +38,8 @@ export type CatalogItem = {
   composer?: string;
   artistFeatured?: string;
   audioAssetUrl?: string;
+  /** Album/EP: nhiều file nhạc — ERN sinh nhiều SoundRecording; `audioAssetUrl` giữ URL track đầu (tương thích). */
+  albumTracks?: CatalogAlbumTrack[];
   coverAssetUrl?: string;
   pline?: string;
   cline?: string;

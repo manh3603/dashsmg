@@ -380,6 +380,7 @@ function senderOpts() {
 function parseCatalogBody(body: Record<string, unknown>): import("./types.js").CatalogItem | null {
   if (!body.id || !body.title) return null;
   const str = (k: string) => (body[k] != null ? String(body[k]) : undefined);
+  const albumTracks = parseAlbumTracksFromBody(body);
   return {
     id: String(body.id),
     title: String(body.title),
@@ -400,6 +401,7 @@ function parseCatalogBody(body: Record<string, unknown>): import("./types.js").C
     composer: str("composer"),
     artistFeatured: str("artistFeatured"),
     audioAssetUrl: str("audioAssetUrl"),
+    albumTracks,
     coverAssetUrl: str("coverAssetUrl"),
     pline: str("pline"),
     cline: str("cline"),
@@ -407,6 +409,25 @@ function parseCatalogBody(body: Record<string, unknown>): import("./types.js").C
     durationIso8601: str("durationIso8601"),
     qcFeedback: str("qcFeedback"),
   };
+}
+
+function parseAlbumTracksFromBody(body: Record<string, unknown>): import("./types.js").CatalogAlbumTrack[] | undefined {
+  const raw = body.albumTracks;
+  if (!Array.isArray(raw)) return undefined;
+  const out: import("./types.js").CatalogAlbumTrack[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const o = row as Record<string, unknown>;
+    const audioAssetUrl = typeof o.audioAssetUrl === "string" ? o.audioAssetUrl.trim() : "";
+    if (!audioAssetUrl) continue;
+    out.push({
+      audioAssetUrl,
+      ...(typeof o.isrc === "string" && o.isrc.trim() ? { isrc: o.isrc.trim() } : {}),
+      ...(typeof o.title === "string" && o.title.trim() ? { title: o.title.trim() } : {}),
+      ...(typeof o.filename === "string" && o.filename.trim() ? { filename: o.filename.trim() } : {}),
+    });
+  }
+  return out.length ? out : undefined;
 }
 
 app.get("/health", (_req, res) => {

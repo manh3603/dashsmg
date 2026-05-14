@@ -12,6 +12,13 @@ export type ReleaseStatus =
   /** @deprecated dùng pending_qc — giữ để tương thích dữ liệu cũ */
   | "pending";
 
+export type CatalogAlbumTrack = {
+  audioAssetUrl: string;
+  isrc?: string;
+  title?: string;
+  filename?: string;
+};
+
 export type CatalogItem = {
   id: string;
   title: string;
@@ -32,6 +39,8 @@ export type CatalogItem = {
   composer?: string;
   artistFeatured?: string;
   audioAssetUrl?: string;
+  /** Album/EP: nhiều file master — mỗi track một ISRC + URL (DDEX). */
+  albumTracks?: CatalogAlbumTrack[];
   coverAssetUrl?: string;
   pline?: string;
   cline?: string;
@@ -355,6 +364,8 @@ export type SubmitReleaseToQCPayload = {
     pline: string;
     cline: string;
     version: string;
+    /** Album/EP — nhiều track đã upload (URL + ISRC). */
+    albumTracks?: { filename: string; url: string; isrc: string; title: string }[];
   };
 };
 
@@ -363,12 +374,16 @@ function buildCatalogItemFromForm(id: string, payload: SubmitReleaseToQCPayload,
     .filter(([, v]) => v)
     .map(([k]) => k);
   const f = payload.form;
+  const headAlbumTrack = f.albumTracks?.length ? f.albumTracks[0]! : null;
   const patch: CatalogItem = {
     id,
     title: f.productName,
     type: payload.releaseKind === "single" ? "Single" : "Album/EP",
     status: "pending_qc",
-    isrc: f.isrc || "—",
+    isrc:
+      payload.releaseKind === "album_ep" && headAlbumTrack
+        ? headAlbumTrack.isrc.trim() || "—"
+        : f.isrc || "—",
     upc: f.upc || "—",
     updated: new Date().toISOString().slice(0, 10),
     artist: f.artistMain,
@@ -382,7 +397,19 @@ function buildCatalogItemFromForm(id: string, payload: SubmitReleaseToQCPayload,
     preorder: f.preorder,
     composer: f.composer || undefined,
     artistFeatured: f.artistFeatured || undefined,
-    audioAssetUrl: f.audioAssetUrl.trim() || undefined,
+    audioAssetUrl:
+      payload.releaseKind === "album_ep" && headAlbumTrack
+        ? headAlbumTrack.url.trim() || f.audioAssetUrl.trim() || undefined
+        : f.audioAssetUrl.trim() || undefined,
+    albumTracks:
+      payload.releaseKind === "album_ep" && Array.isArray(f.albumTracks) && f.albumTracks.length > 0
+        ? f.albumTracks.map((t) => ({
+            audioAssetUrl: t.url.trim(),
+            isrc: t.isrc.trim() || undefined,
+            title: t.title.trim() || undefined,
+            filename: t.filename.trim() || undefined,
+          }))
+        : undefined,
     coverAssetUrl: f.coverAssetUrl.trim() || undefined,
     pline: f.pline.trim() || undefined,
     cline: f.cline.trim() || undefined,

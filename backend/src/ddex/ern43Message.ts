@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { CatalogItem } from "../types.js";
 import type { DdexMessageOpts } from "./ddexMessageOpts.js";
 import { buildEan13From12, isValidEan13 } from "../metadata/ean13.js";
+import { getEffectiveSoundRecordings } from "./albumTracks.js";
 
 const NS = "http://ddex.net/xml/ern/43";
 
@@ -90,8 +91,6 @@ export function buildErn43NewReleaseMessage(item: CatalogItem, opts: DdexMessage
   const pline = esc(item.pline?.trim() || `℗ ${new Date().getFullYear()} ${item.artist || "Artist"}`);
   const cline = esc(item.cline?.trim() || `© ${new Date().getFullYear()} ${item.artist || "Artist"}`);
   const startDate = esc(item.releaseDate?.trim() || new Date().toISOString().slice(0, 10));
-  const audioUrl = item.audioAssetUrl?.trim() || "";
-  const resRef = "A1";
   const imgRef = "IMG1";
   const relRef = "R0";
   const partyArtist = "PARTY_ARTIST1";
@@ -100,6 +99,56 @@ export function buildErn43NewReleaseMessage(item: CatalogItem, opts: DdexMessage
   const territoriesXml = opts.territoryCodes.map((c) => `        <TerritoryCode>${esc(c)}</TerritoryCode>`).join("\n");
 
   const coverBlock = imageSection(item, imgRef);
+
+  const recordings = getEffectiveSoundRecordings(item);
+  const soundBlocks = recordings
+    .map((rec, idx) => {
+      const resRef = `A${idx + 1}`;
+      const trTitle = esc(rec.title);
+      const audioUrl = esc(rec.audioAssetUrl);
+      const isrcXml =
+        rec.isrc?.trim() && rec.isrc !== "—" && rec.isrc !== "-"
+          ? `<ISRC>${esc(rec.isrc.trim())}</ISRC>`
+          : "";
+      return `
+    <SoundRecording>
+      <SoundRecordingType>MusicalWorkSoundRecording</SoundRecordingType>
+      <ResourceReference>${resRef}</ResourceReference>
+      <ReferenceTitle>
+        <TitleText>${trTitle}</TitleText>
+      </ReferenceTitle>
+      ${isrcXml}
+      <SoundRecordingDetailsByTerritory>
+        <TerritoryCode>Worldwide</TerritoryCode>
+        <Title TitleType="FormalTitle">
+          <TitleText>${trTitle}</TitleText>
+        </Title>
+        <DisplayArtist>
+          <PartyName FullName="${artist}"/>
+          <ArtistRole>MainArtist</ArtistRole>
+        </DisplayArtist>${displayArtistFeaturedXml}
+      </SoundRecordingDetailsByTerritory>
+      <TechnicalSoundRecordingDetails>
+        <TechnicalResourceDetails>
+          <File>
+            <URL>${audioUrl}</URL>
+          </File>
+        </TechnicalResourceDetails>
+      </TechnicalSoundRecordingDetails>
+    </SoundRecording>`;
+    })
+    .join("");
+
+  const releaseResourceRefs =
+    recordings
+      .map((_, idx) => {
+        const rt = idx === 0 ? "PrimaryResource" : "SecondaryResource";
+        return `        <ReleaseResourceReference ReleaseResourceType="${rt}">A${idx + 1}</ReleaseResourceReference>`;
+      })
+      .join("\n") +
+    (item.coverAssetUrl?.trim() && /^https?:\/\//i.test(item.coverAssetUrl.trim())
+      ? `\n        <ReleaseResourceReference ReleaseResourceType="PrimaryResource">${imgRef}</ReleaseResourceReference>`
+      : "");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ernm:NewReleaseMessage xmlns:ernm="${NS}" MessageSchemaVersionId="ern/43" LanguageAndScriptCode="${esc(lang)}"
@@ -134,31 +183,7 @@ export function buildErn43NewReleaseMessage(item: CatalogItem, opts: DdexMessage
     </Party>
   </PartyList>
   <ResourceList>
-    <SoundRecording>
-      <SoundRecordingType>MusicalWorkSoundRecording</SoundRecordingType>
-      <ResourceReference>${resRef}</ResourceReference>
-      <ReferenceTitle>
-        <TitleText>${title}</TitleText>
-      </ReferenceTitle>
-      ${item.type === "Single" && item.isrc?.trim() && item.isrc !== "—" && item.isrc !== "-" ? `<ISRC>${esc(item.isrc.trim())}</ISRC>` : ""}
-      <SoundRecordingDetailsByTerritory>
-        <TerritoryCode>Worldwide</TerritoryCode>
-        <Title TitleType="FormalTitle">
-          <TitleText>${title}</TitleText>
-        </Title>
-        <DisplayArtist>
-          <PartyName FullName="${artist}"/>
-          <ArtistRole>MainArtist</ArtistRole>
-        </DisplayArtist>${displayArtistFeaturedXml}
-      </SoundRecordingDetailsByTerritory>
-      <TechnicalSoundRecordingDetails>
-        <TechnicalResourceDetails>
-          <File>
-            <URL>${esc(audioUrl)}</URL>
-          </File>
-        </TechnicalResourceDetails>
-      </TechnicalSoundRecordingDetails>
-    </SoundRecording>${coverBlock}
+${soundBlocks}${coverBlock}
   </ResourceList>
   <ReleaseList>
     <Release>
@@ -171,7 +196,7 @@ export function buildErn43NewReleaseMessage(item: CatalogItem, opts: DdexMessage
         <TitleText>${title}</TitleText>
       </ReferenceTitle>
       <ReleaseResourceReferenceList>
-        <ReleaseResourceReference ReleaseResourceType="PrimaryResource">${resRef}</ReleaseResourceReference>
+${releaseResourceRefs}
       </ReleaseResourceReferenceList>
       <ReleaseDetailsByTerritory>
         <TerritoryCode>Worldwide</TerritoryCode>

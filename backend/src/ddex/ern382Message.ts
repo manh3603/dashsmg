@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { CatalogItem } from "../types.js";
 import type { DdexMessageOpts } from "./ddexMessageOpts.js";
 import { buildEan13From12, isValidEan13 } from "../metadata/ean13.js";
+import { getEffectiveSoundRecordings } from "./albumTracks.js";
 
 const NS = "http://ddex.net/xml/ern/382";
 
@@ -111,9 +112,7 @@ export function buildErn382NewReleaseMessage(item: CatalogItem, opts: DdexMessag
   const pline = plineText(item);
   const cline = clineText(item);
   const startDate = esc(item.releaseDate?.trim() || new Date().toISOString().slice(0, 10));
-  const audioUrl = item.audioAssetUrl?.trim() || "";
   const durationEl = soundDurationPt(item);
-  const resRef = "A1";
   const imgRef = "IMG1";
   const relRef = "R0";
   const isMainRelease = item.type === "Album/EP" ? "true" : "false";
@@ -154,9 +153,60 @@ ${territoriesXml}
   const coverBlock = imageSection(item, imgRef);
   const hasCover = Boolean(item.coverAssetUrl?.trim() && /^https?:\/\//i.test(item.coverAssetUrl.trim()));
 
-  const hasIsrc =
-    Boolean(item.isrc?.trim()) && item.isrc !== "—" && item.isrc !== "-";
-  const isrcInner = hasIsrc ? `<ISRC>${esc(item.isrc!.trim())}</ISRC>` : "";
+  const recordings = getEffectiveSoundRecordings(item);
+  const soundBlocks = recordings
+    .map((rec, idx) => {
+      const resRef = `A${idx + 1}`;
+      const trTitle = esc(rec.title);
+      const audioUrl = esc(rec.audioAssetUrl);
+      const hasIsrc = Boolean(rec.isrc?.trim()) && rec.isrc !== "—" && rec.isrc !== "-";
+      const isrcInner = hasIsrc
+        ? `<ISRC>${esc(rec.isrc!.trim())}</ISRC>`
+        : `<ProprietaryId Namespace="urn:smg:recording">${esc(`${item.id}_${resRef}`)}</ProprietaryId>`;
+      return `
+    <SoundRecording>
+      <SoundRecordingType>MusicalWorkSoundRecording</SoundRecordingType>
+      <SoundRecordingId>
+        ${isrcInner}
+      </SoundRecordingId>
+      <ResourceReference>${resRef}</ResourceReference>
+      <ReferenceTitle>
+        <TitleText>${trTitle}</TitleText>
+      </ReferenceTitle>
+      <Duration>${durationEl}</Duration>
+      <SoundRecordingDetailsByTerritory>
+        <TerritoryCode>Worldwide</TerritoryCode>
+        <Title TitleType="FormalTitle">
+          <TitleText>${trTitle}</TitleText>
+        </Title>
+        <DisplayArtist>
+          <PartyName FullName="${artist}"/>
+          <ArtistRole>MainArtist</ArtistRole>
+        </DisplayArtist>${displayArtistFeaturedXml}${indirectComposerXml}
+        <OriginalResourceReleaseDate>
+          <Date>${startDate}</Date>
+        </OriginalResourceReleaseDate>
+        <PLine>
+          <PLineText>${pline}</PLineText>
+        </PLine>
+        <Genre>
+          <GenreText>${genre}</GenreText>
+        </Genre>
+        <TechnicalSoundRecordingDetails>
+          <TechnicalResourceDetails>
+            <File>
+              <URL>${audioUrl}</URL>
+            </File>
+          </TechnicalResourceDetails>
+        </TechnicalSoundRecordingDetails>
+      </SoundRecordingDetailsByTerritory>
+    </SoundRecording>`;
+    })
+    .join("");
+
+  const releaseResourceRefs =
+    recordings.map((_, idx) => `        <ReleaseResourceReference>A${idx + 1}</ReleaseResourceReference>`).join("\n") +
+    (hasCover ? `\n        <ReleaseResourceReference>${imgRef}</ReleaseResourceReference>` : "");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <NewReleaseMessage xmlns="http://ddex.net/xml/ern/382"
@@ -193,43 +243,7 @@ ${territoriesXml}
     </Party>
   </PartyList>
   <ResourceList>
-    <SoundRecording>
-      <SoundRecordingType>MusicalWorkSoundRecording</SoundRecordingType>
-      <SoundRecordingId>
-        ${isrcInner || `<ProprietaryId Namespace="urn:smg:recording">${esc(item.id)}</ProprietaryId>`}
-      </SoundRecordingId>
-      <ResourceReference>${resRef}</ResourceReference>
-      <ReferenceTitle>
-        <TitleText>${title}</TitleText>
-      </ReferenceTitle>
-      <Duration>${durationEl}</Duration>
-      <SoundRecordingDetailsByTerritory>
-        <TerritoryCode>Worldwide</TerritoryCode>
-        <Title TitleType="FormalTitle">
-          <TitleText>${title}</TitleText>
-        </Title>
-        <DisplayArtist>
-          <PartyName FullName="${artist}"/>
-          <ArtistRole>MainArtist</ArtistRole>
-        </DisplayArtist>${displayArtistFeaturedXml}${indirectComposerXml}
-        <OriginalResourceReleaseDate>
-          <Date>${startDate}</Date>
-        </OriginalResourceReleaseDate>
-        <PLine>
-          <PLineText>${pline}</PLineText>
-        </PLine>
-        <Genre>
-          <GenreText>${genre}</GenreText>
-        </Genre>
-        <TechnicalSoundRecordingDetails>
-          <TechnicalResourceDetails>
-            <File>
-              <URL>${esc(audioUrl)}</URL>
-            </File>
-          </TechnicalResourceDetails>
-        </TechnicalSoundRecordingDetails>
-      </SoundRecordingDetailsByTerritory>
-    </SoundRecording>${coverBlock}
+${soundBlocks}${coverBlock}
   </ResourceList>
   <ReleaseList>
     <Release IsMainRelease="${isMainRelease}">
@@ -242,9 +256,7 @@ ${territoriesXml}
         <TitleText>${title}</TitleText>
       </ReferenceTitle>
       <ReleaseResourceReferenceList>
-        <ReleaseResourceReference>${resRef}</ReleaseResourceReference>${
-          hasCover ? `\n        <ReleaseResourceReference>${imgRef}</ReleaseResourceReference>` : ""
-        }
+${releaseResourceRefs}
       </ReleaseResourceReferenceList>
       <ReleaseDetailsByTerritory>
         <TerritoryCode>Worldwide</TerritoryCode>

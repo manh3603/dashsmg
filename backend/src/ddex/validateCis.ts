@@ -31,9 +31,19 @@ function isLikelyIsrc(s: string): boolean {
   return x.length >= 12 && /^[A-Z0-9]+$/i.test(x);
 }
 
+function validateUpcField(label: string, upcRaw: string, errors: string[]) {
+  if (!isLikelyGtin13(clean(upcRaw)) || isPlaceholderUpc(clean(upcRaw))) {
+    errors.push(`${label}: cần UPC/GTIN-13 (12–13 chữ số).`);
+    return;
+  }
+  const g = normalizeGtin(clean(upcRaw));
+  if (/^\d{13}$/.test(g) && !isValidEan13(g)) {
+    errors.push(`${label}: UPC 13 chữ số không đúng số kiểm EAN-13 (check digit).`);
+  }
+}
+
 export function validateCisExport(item: CatalogItem): CisValidation {
   const errors: string[] = [];
-  const audio = clean(item.audioAssetUrl);
   const rd = clean(item.releaseDate);
 
   if (!rd) errors.push("Thiếu ngày phát hành (releaseDate) — bắt buộc cho Deal / ValidityPeriod.");
@@ -42,19 +52,28 @@ export function validateCisExport(item: CatalogItem): CisValidation {
     if (!isLikelyIsrc(clean(item.isrc)) || isPlaceholderIsrc(clean(item.isrc))) {
       errors.push("Single: cần ISRC hợp lệ (12 ký tự, ví dụ CC-XXX-YY-NNNNN).");
     }
+    validateUpcField("Single", item.upc ?? "", errors);
   } else {
-    if (!isLikelyGtin13(clean(item.upc)) || isPlaceholderUpc(clean(item.upc))) {
-      errors.push("Album/EP: cần UPC/GTIN-13 (12–13 chữ số).");
-    } else {
-      const g = normalizeGtin(clean(item.upc));
-      if (/^\d{13}$/.test(g) && !isValidEan13(g)) {
-        errors.push("Album/EP: UPC 13 chữ số không đúng số kiểm EAN-13 (check digit).");
-      }
-    }
+    validateUpcField("Album/EP", item.upc ?? "", errors);
   }
 
-  if (!audio || !/^https?:\/\//i.test(audio)) {
-    errors.push("Cần URL file âm thanh (audioAssetUrl) dạng https:// — DSP/aggregator dùng trong TechnicalSoundRecordingDetails.");
+  const tracks = Array.isArray(item.albumTracks) ? item.albumTracks : [];
+  if (item.type === "Album/EP" && tracks.length > 0) {
+    tracks.forEach((t, idx) => {
+      const n = idx + 1;
+      const u = clean(t.audioAssetUrl);
+      if (!u || !/^https?:\/\//i.test(u)) {
+        errors.push(`Album track ${n}: cần URL file âm thanh https://.`);
+      }
+      if (!isLikelyIsrc(clean(t.isrc ?? "")) || isPlaceholderIsrc(clean(t.isrc ?? ""))) {
+        errors.push(`Album track ${n}: cần ISRC hợp lệ (mỗi track một ISRC).`);
+      }
+    });
+  } else {
+    const audio = clean(item.audioAssetUrl);
+    if (!audio || !/^https?:\/\//i.test(audio)) {
+      errors.push("Cần URL file âm thanh (audioAssetUrl) dạng https:// — DSP/aggregator dùng trong TechnicalSoundRecordingDetails.");
+    }
   }
 
   const artist = clean(item.artist);

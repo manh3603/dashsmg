@@ -13,6 +13,7 @@ import {
   Globe,
   FileText,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
 import {
   getActiveStoreOptions,
@@ -41,6 +42,12 @@ import {
 } from "@/lib/release-validation";
 
 type ReleaseKind = "single" | "album_ep" | null;
+
+type AlbumTrackFormRow = { filename: string; url: string; isrc: string; title: string };
+
+function stripAudioFilename(name: string): string {
+  return name.replace(/\.(wav|flac|mp3)$/i, "").trim() || name;
+}
 
 const STEPS = [
   { id: 1, label: "Loại phát hành", icon: Disc3 },
@@ -72,7 +79,12 @@ export default function CreateReleaseFlow() {
   const earlyNewAlbumUpcRef = useRef<string | null>(null);
   /** Bài mới tại bước 4: bổ sung ISRC/UPC nếu bước đầu bỏ sót (chưa có phiên API / backend). */
   const lastNewSingleStep4IsrcRef = useRef<string | null>(null);
+  const lastNewSingleStep4UpcRef = useRef<string | null>(null);
   const lastNewAlbumStep4UpcRef = useRef<string | null>(null);
+  /** Bài mới + Single: cấp UPC Soul khi chọn loại (song song ISRC). */
+  const earlyNewSingleUpcRef = useRef<string | null>(null);
+  /** Single đang sửa — bước 4: cấp UPC nếu trống. */
+  const lastEditSingleStep4UpcRef = useRef<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
@@ -114,6 +126,7 @@ export default function CreateReleaseFlow() {
       string,
       boolean
     >,
+    albumTracks: [] as AlbumTrackFormRow[],
   }));
 
   const canNext = useMemo(() => {
@@ -122,12 +135,40 @@ export default function CreateReleaseFlow() {
         return releaseKind !== null;
       case 2:
         return formData.productName.trim().length > 0 && formData.artistMain.trim().length > 0;
-      case 3:
+      case 3: {
+        if (releaseKind === "album_ep" && formData.albumTracks.length > 0) {
+          return formData.albumTracks.every(
+            (t) =>
+              /^https?:\/\//i.test(t.url.trim()) &&
+              isValidIsrc(t.isrc) &&
+              !isPlaceholderIsrc(t.isrc)
+          );
+        }
         return /^https?:\/\//i.test(formData.audioAssetUrl.trim());
-      case 4:
-        return releaseKind === "single"
-          ? isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)
-          : isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc);
+      }
+      case 4: {
+        if (releaseKind === "single") {
+          return (
+            isValidIsrc(formData.isrc) &&
+            !isPlaceholderIsrc(formData.isrc) &&
+            isValidUpcGtin(formData.upc) &&
+            !isPlaceholderUpc(formData.upc)
+          );
+        }
+        if (releaseKind === "album_ep" && formData.albumTracks.length > 0) {
+          return (
+            isValidUpcGtin(formData.upc) &&
+            !isPlaceholderUpc(formData.upc) &&
+            formData.albumTracks.every((t) => isValidIsrc(t.isrc) && !isPlaceholderIsrc(t.isrc))
+          );
+        }
+        return (
+          isValidUpcGtin(formData.upc) &&
+          !isPlaceholderUpc(formData.upc) &&
+          isValidIsrc(formData.isrc) &&
+          !isPlaceholderIsrc(formData.isrc)
+        );
+      }
       case 5:
         return Object.values(formData.stores).some(Boolean);
       case 6:
@@ -142,7 +183,9 @@ export default function CreateReleaseFlow() {
       lastIsrcAutoKeyRef.current = null;
       lastUpcAutoKeyRef.current = null;
       lastNewSingleStep4IsrcRef.current = null;
+      lastNewSingleStep4UpcRef.current = null;
       lastNewAlbumStep4UpcRef.current = null;
+      lastEditSingleStep4UpcRef.current = null;
     }
   }, [currentStep]);
 
@@ -150,6 +193,7 @@ export default function CreateReleaseFlow() {
     if (editId) return;
     if (releaseKind !== "single") {
       earlyNewSingleIsrcRef.current = null;
+      earlyNewSingleUpcRef.current = null;
       return;
     }
     if (isValidIsrc(formData.isrc) && !isPlaceholderIsrc(formData.isrc)) return;
@@ -169,6 +213,31 @@ export default function CreateReleaseFlow() {
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khi đổi loại phát hành / chế độ sửa
+  }, [releaseKind, editId]);
+
+  useEffect(() => {
+    if (editId) return;
+    if (releaseKind !== "single") {
+      earlyNewSingleUpcRef.current = null;
+      return;
+    }
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const k = "early-new-single-upc";
+    if (earlyNewSingleUpcRef.current === k) return;
+    earlyNewSingleUpcRef.current = k;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        earlyNewSingleUpcRef.current = null;
+        return;
+      }
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [releaseKind, editId]);
 
   useEffect(() => {
@@ -213,6 +282,27 @@ export default function CreateReleaseFlow() {
       }
       setFormData((fd) =>
         isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: r.isrc }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
+
+  useEffect(() => {
+    if (currentStep !== 4 || editId || releaseKind !== "single") return;
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = "new-step4-upc";
+    if (lastNewSingleStep4UpcRef.current === dedupeKey) return;
+    lastNewSingleStep4UpcRef.current = dedupeKey;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastNewSingleStep4UpcRef.current = null;
+        return;
+      }
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,6 +375,28 @@ export default function CreateReleaseFlow() {
   }, [currentStep, releaseKind, editId]);
 
   useEffect(() => {
+    if (currentStep !== 4 || releaseKind !== "single") return;
+    if (!editId) return;
+    if (isValidUpcGtin(formData.upc) && !isPlaceholderUpc(formData.upc)) return;
+    if (!isBackendConfigured()) return;
+    const tok = getApiSessionToken();
+    if (!tok) return;
+    const dedupeKey = `${editId}-single-step4-upc`;
+    if (lastEditSingleStep4UpcRef.current === dedupeKey) return;
+    lastEditSingleStep4UpcRef.current = dedupeKey;
+    void postUpcNext(tok).then((r) => {
+      if (!r.ok) {
+        lastEditSingleStep4UpcRef.current = null;
+        return;
+      }
+      setFormData((fd) =>
+        isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: r.upc }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, releaseKind, editId]);
+
+  useEffect(() => {
     const syncStores = () => {
       const opts = getActiveStoreOptions();
       setFormData((fd) => {
@@ -324,6 +436,14 @@ export default function CreateReleaseFlow() {
           ? Boolean(item.storesSelected.includes(o.id))
           : isCisStoreId(o.id);
       }
+      const loadedTracks: AlbumTrackFormRow[] = (item.albumTracks ?? [])
+        .filter((t) => String(t.audioAssetUrl ?? "").trim())
+        .map((t) => ({
+          filename: t.filename?.trim() || `${stripAudioFilename(t.title || "track")}.wav`,
+          url: (t.audioAssetUrl ?? "").trim(),
+          isrc: t.isrc && t.isrc.trim() && t.isrc !== "—" ? t.isrc.trim() : "",
+          title: (t.title ?? "").trim() || stripAudioFilename(t.filename || "Track"),
+        }));
       setFormData({
         productName: item.title,
         language: item.language ?? "Tiếng Việt",
@@ -344,8 +464,17 @@ export default function CreateReleaseFlow() {
         cline: item.cline ?? "",
         version: item.version ?? "",
         stores: storeMap,
+        albumTracks: loadedTracks,
       });
-      setAudioFileLabel(item.audioAssetUrl?.trim() ? "Đã có URL âm thanh" : null);
+      setAudioFileLabel(
+        loadedTracks.length > 1
+          ? `${loadedTracks.length} track`
+          : loadedTracks.length === 1
+            ? loadedTracks[0]!.filename
+            : item.audioAssetUrl?.trim()
+              ? "Đã có URL âm thanh"
+              : null
+      );
       setCoverFileLabel(item.coverAssetUrl?.trim() ? "Đã có ảnh bìa" : null);
       setEditQcNote(item.qcFeedback?.trim() || null);
       setCurrentStep(2);
@@ -366,7 +495,118 @@ export default function CreateReleaseFlow() {
 
   const handlePrevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
 
+  const chooseReleaseKind = (k: "single" | "album_ep") => {
+    setReleaseKind(k);
+    if (k === "single") {
+      setFormData((fd) => ({ ...fd, albumTracks: [] }));
+    }
+  };
+
+  const clearAlbumMultiTracks = () => {
+    setFormData((fd) => ({
+      ...fd,
+      albumTracks: [],
+      audioAssetUrl: "",
+      isrc: "",
+    }));
+    setAudioFileLabel(null);
+  };
+
+  const removeAlbumTrackAt = (index: number) => {
+    setFormData((fd) => {
+      const next = fd.albumTracks.filter((_, i) => i !== index);
+      const head = next[0];
+      return {
+        ...fd,
+        albumTracks: next,
+        audioAssetUrl: head?.url ?? "",
+        isrc: head?.isrc ?? "",
+      };
+    });
+  };
+
+  const patchAlbumTrack = (index: number, patch: Partial<AlbumTrackFormRow>) => {
+    setFormData((fd) => {
+      const next = fd.albumTracks.map((row, i) => (i === index ? { ...row, ...patch } : row));
+      const head = next[0];
+      const syncHead =
+        index === 0 && (patch.url !== undefined || patch.isrc !== undefined || patch.title !== undefined);
+      return {
+        ...fd,
+        albumTracks: next,
+        ...(syncHead
+          ? {
+              audioAssetUrl: head?.url?.trim() ?? fd.audioAssetUrl,
+              isrc: head?.isrc ?? fd.isrc,
+            }
+          : {}),
+      };
+    });
+  };
+
+  const runAlbumTracksUpload = async (files: File[]) => {
+    const list = files.filter((f) => /\.(wav|flac|mp3)$/i.test(f.name));
+    if (!list.length) {
+      setUploadErr("Chỉ chấp nhận WAV / FLAC / MP3.");
+      return;
+    }
+    if (!isBackendConfigured()) {
+      setUploadErr("Cần backend: chạy «npm run dev:all» (API qua /smg-api) để upload file phục vụ DDEX.");
+      return;
+    }
+    setUploadErr(null);
+    setAudioUploading(true);
+    const tok = getApiSessionToken();
+    const newRows: AlbumTrackFormRow[] = [];
+    for (const file of list) {
+      const r = await uploadReleaseAsset("audio", file);
+      if (!r.ok) {
+        setAudioUploading(false);
+        setUploadErr(r.error ?? `Upload thất bại: ${file.name}`);
+        return;
+      }
+      if (!r.url) continue;
+      let isrc = "";
+      if (tok) {
+        const ir = await postIsrcNext(tok);
+        if (ir.ok) isrc = ir.isrc;
+      }
+      newRows.push({
+        filename: file.name,
+        url: r.url,
+        isrc,
+        title: stripAudioFilename(file.name),
+      });
+    }
+    setAudioUploading(false);
+    if (!newRows.length) return;
+    setFormData((fd) => {
+      const merged = [...fd.albumTracks, ...newRows];
+      const head = merged[0];
+      return {
+        ...fd,
+        albumTracks: merged,
+        audioAssetUrl: head?.url.trim() ?? "",
+        isrc: head?.isrc ?? fd.isrc,
+      };
+    });
+    setAudioFileLabel(newRows.length === 1 ? newRows[0]!.filename : `Đã thêm ${newRows.length} file`);
+    if (tok && newRows.length > 0) {
+      void postUpcNext(tok).then((ur) => {
+        if (!ur.ok) return;
+        setFormData((fd) =>
+          isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: ur.upc }
+        );
+        earlyNewAlbumUpcRef.current = "early-new-album";
+      });
+    }
+  };
+
   const runAudioUpload = async (file: File) => {
+    if (releaseKind === "album_ep") {
+      await runAlbumTracksUpload([file]);
+      return;
+    }
     if (!isBackendConfigured()) {
       setUploadErr("Cần backend: chạy «npm run dev:all» (API qua /smg-api) để upload file phục vụ DDEX.");
       return;
@@ -385,27 +625,24 @@ export default function CreateReleaseFlow() {
     }
     const tok = getApiSessionToken();
     if (tok && r.url && isBackendConfigured()) {
-      if (releaseKind === "album_ep") {
-        const needUpc = isPlaceholderUpc(formData.upc) || !isValidUpcGtin(formData.upc);
-        if (needUpc) {
-          const ur = await postUpcNext(tok);
-          if (ur.ok) {
-            setFormData((fd) =>
-              isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: ur.upc }
-            );
-            earlyNewAlbumUpcRef.current = "early-new-album";
-          }
+      const needIsrc = isPlaceholderIsrc(formData.isrc) || !isValidIsrc(formData.isrc);
+      if (needIsrc) {
+        const ir = await postIsrcNext(tok);
+        if (ir.ok) {
+          setFormData((fd) =>
+            isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: ir.isrc }
+          );
+          earlyNewSingleIsrcRef.current = "early-new-single";
         }
-      } else if (releaseKind === "single") {
-        const needIsrc = isPlaceholderIsrc(formData.isrc) || !isValidIsrc(formData.isrc);
-        if (needIsrc) {
-          const ir = await postIsrcNext(tok);
-          if (ir.ok) {
-            setFormData((fd) =>
-              isValidIsrc(fd.isrc) && !isPlaceholderIsrc(fd.isrc) ? fd : { ...fd, isrc: ir.isrc }
-            );
-            earlyNewSingleIsrcRef.current = "early-new-single";
-          }
+      }
+      const needUpc = isPlaceholderUpc(formData.upc) || !isValidUpcGtin(formData.upc);
+      if (needUpc) {
+        const ur = await postUpcNext(tok);
+        if (ur.ok) {
+          setFormData((fd) =>
+            isValidUpcGtin(fd.upc) && !isPlaceholderUpc(fd.upc) ? fd : { ...fd, upc: ur.upc }
+          );
+          earlyNewSingleUpcRef.current = "early-new-single-upc";
         }
       }
     }
@@ -428,6 +665,33 @@ export default function CreateReleaseFlow() {
       return;
     }
     setFormData((fd) => ({ ...fd, isrc: r.isrc }));
+  };
+
+  const fetchNextIsrcForAlbumTrack = async (index: number) => {
+    if (!isBackendConfigured()) {
+      setUploadErr("Cần backend để cấp ISRC. Chạy «npm run dev:all» hoặc đăng nhập lại để lấy phiên API.");
+      return;
+    }
+    const tok = getApiSessionToken();
+    if (!tok) {
+      setUploadErr("Đăng xuất và đăng nhập lại để cấp ISRC tự động từ kho hệ thống.");
+      return;
+    }
+    setUploadErr(null);
+    const r = await postIsrcNext(tok);
+    if (!r.ok) {
+      setUploadErr(r.error);
+      return;
+    }
+    setFormData((fd) => {
+      const next = fd.albumTracks.map((row, i) => (i === index ? { ...row, isrc: r.isrc } : row));
+      const head = next[0];
+      return {
+        ...fd,
+        albumTracks: next,
+        ...(index === 0 ? { isrc: head?.isrc ?? fd.isrc } : {}),
+      };
+    });
   };
 
   const fetchNextUpc = async () => {
@@ -481,11 +745,56 @@ export default function CreateReleaseFlow() {
         });
         return;
       }
+      if (!isValidUpcGtin(formData.upc) || isPlaceholderUpc(formData.upc)) {
+        setSubmitModal({
+          table: [],
+          backendSynced: false,
+          deliveryNote:
+            "Single cần UPC/GTIN-13 hợp lệ (12–13 chữ số) — hệ thống có thể tự cấp khi có backend và phiên API.",
+          deliveryWarning: true,
+        });
+        return;
+      }
+    } else if (releaseKind === "album_ep" && formData.albumTracks.length > 0) {
+      if (!isValidUpcGtin(formData.upc) || isPlaceholderUpc(formData.upc)) {
+        setSubmitModal({
+          table: [],
+          backendSynced: false,
+          deliveryNote: "Album/EP (nhiều track) cần UPC/GTIN-13: 12–13 chữ số.",
+          deliveryWarning: true,
+        });
+        return;
+      }
+      const bad = formData.albumTracks.some(
+        (t) =>
+          !/^https?:\/\//i.test(t.url.trim()) ||
+          !isValidIsrc(t.isrc) ||
+          isPlaceholderIsrc(t.isrc)
+      );
+      if (bad) {
+        setSubmitModal({
+          table: [],
+          backendSynced: false,
+          deliveryNote:
+            "Mỗi track cần URL https và ISRC hợp lệ. Kiểm tra bước Tải lên và bước Siêu dữ liệu.",
+          deliveryWarning: true,
+        });
+        return;
+      }
     } else if (!isValidUpcGtin(formData.upc) || isPlaceholderUpc(formData.upc)) {
       setSubmitModal({
         table: [],
         backendSynced: false,
         deliveryNote: "Album/EP cần UPC/GTIN-13: 12–13 chữ số.",
+        deliveryWarning: true,
+      });
+      return;
+    } else if (!isValidIsrc(formData.isrc) || isPlaceholderIsrc(formData.isrc)) {
+      setSubmitModal({
+        table: [],
+        backendSynced: false,
+        deliveryNote:
+          "Album/EP (một file) cần ISRC hợp lệ — hoặc tải nhiều file để hệ thống gán ISRC từng track.",
         deliveryWarning: true,
       });
       return;
@@ -660,25 +969,25 @@ export default function CreateReleaseFlow() {
             <div className="grid gap-4 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={() => setReleaseKind("single")}
+                onClick={() => chooseReleaseKind("single")}
                 className={`rounded-xl border-2 p-6 text-left transition-all ${
                   releaseKind === "single" ? "border-cyan-600 bg-cyan-50" : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <Music className="mb-2 h-8 w-8 text-cyan-600" />
                 <p className="font-semibold text-slate-900">Single</p>
-                <p className="mt-1 text-sm text-slate-600">Một bài — một ISRC</p>
+                <p className="mt-1 text-sm text-slate-600">Một bài — ISRC và UPC (tự cấp khi có API)</p>
               </button>
               <button
                 type="button"
-                onClick={() => setReleaseKind("album_ep")}
+                onClick={() => chooseReleaseKind("album_ep")}
                 className={`rounded-xl border-2 p-6 text-left transition-all ${
                   releaseKind === "album_ep" ? "border-cyan-600 bg-cyan-50" : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <Disc3 className="mb-2 h-8 w-8 text-cyan-600" />
                 <p className="font-semibold text-slate-900">Album / EP</p>
-                <p className="mt-1 text-sm text-slate-600">Nhiều track — một UPC</p>
+                <p className="mt-1 text-sm text-slate-600">Một UPC — nhiều track, mỗi track một ISRC (upload nhiều file)</p>
               </button>
             </div>
           </div>
@@ -808,6 +1117,13 @@ export default function CreateReleaseFlow() {
               Kéo thả hoặc chọn file từ máy — file được lưu trên <strong>backend</strong> và tạo URL{" "}
               <code className="rounded bg-slate-100 px-1 text-xs">https://</code> cho DDEX. Production: đặt{" "}
               <code className="rounded bg-slate-100 px-1 text-xs">PUBLIC_BACKEND_URL</code> trỏ domain công khai.
+              {releaseKind === "album_ep" ? (
+                <>
+                  {" "}
+                  <strong>Album / EP:</strong> có thể chọn nhiều file WAV/FLAC/MP3 cùng lúc — mỗi file một track (ISRC
+                  riêng).
+                </>
+              ) : null}
             </p>
             {uploadErr && (
               <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{uploadErr}</p>
@@ -815,55 +1131,141 @@ export default function CreateReleaseFlow() {
 
             <div>
               <p className="mb-2 text-sm font-medium text-slate-700">File âm thanh * (WAV / FLAC / MP3)</p>
-              <div
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") audioInputRef.current?.click();
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setAudioDrag(true);
-                }}
-                onDragLeave={() => setAudioDrag(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setAudioDrag(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) void runAudioUpload(f);
-                }}
-                className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-                  audioDrag ? "border-cyan-500 bg-cyan-50" : "border-slate-200 bg-slate-50"
-                }`}
-              >
-                <UploadCloud className="mx-auto h-10 w-10 text-cyan-600" />
-                <p className="mt-3 text-sm font-medium text-slate-800">Kéo thả file vào đây</p>
-                <p className="mt-1 text-xs text-slate-500">hoặc</p>
-                <button
-                  type="button"
-                  disabled={audioUploading}
-                  onClick={() => audioInputRef.current?.click()}
-                  className="mt-3 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
-                >
-                  {audioUploading ? "Đang tải lên…" : "Chọn file từ máy tính"}
-                </button>
-                <input
-                  ref={audioInputRef}
-                  type="file"
-                  accept=".wav,.flac,.mp3,audio/wav,audio/flac,audio/mpeg"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void runAudioUpload(f);
-                    e.target.value = "";
+              {releaseKind === "album_ep" ? (
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") audioInputRef.current?.click();
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setAudioDrag(true);
+                    }}
+                    onDragLeave={() => setAudioDrag(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setAudioDrag(false);
+                      const list = Array.from(e.dataTransfer.files ?? []).filter((f) =>
+                        /\.(wav|flac|mp3)$/i.test(f.name)
+                      );
+                      if (list.length) void runAlbumTracksUpload(list);
+                    }}
+                    className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+                      audioDrag ? "border-cyan-500 bg-cyan-50" : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
+                    <UploadCloud className="mx-auto h-10 w-10 text-cyan-600" />
+                    <p className="mt-3 text-sm font-medium text-slate-800">Kéo thả một hoặc nhiều file vào đây</p>
+                    <p className="mt-1 text-xs text-slate-500">hoặc</p>
+                    <button
+                      type="button"
+                      disabled={audioUploading}
+                      onClick={() => audioInputRef.current?.click()}
+                      className="mt-3 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
+                    >
+                      {audioUploading ? "Đang tải lên…" : "Chọn một hoặc nhiều file"}
+                    </button>
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      multiple
+                      accept=".wav,.flac,.mp3,audio/wav,audio/flac,audio/mpeg"
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (files?.length) void runAlbumTracksUpload(Array.from(files));
+                        e.target.value = "";
+                      }}
+                    />
+                    {audioFileLabel && (
+                      <p className="mt-3 text-xs text-emerald-700">
+                        Đã chọn: <span className="font-mono">{audioFileLabel}</span>
+                      </p>
+                    )}
+                  </div>
+                  {formData.albumTracks.length > 0 ? (
+                    <ul className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                      {formData.albumTracks.map((t, i) => (
+                        <li key={`${t.url}-${i}`} className="flex items-start gap-3 px-3 py-2.5 text-sm">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-slate-900">{t.filename}</p>
+                            <p className="truncate font-mono text-xs text-slate-500">{t.url}</p>
+                            {t.isrc ? (
+                              <p className="mt-0.5 font-mono text-xs text-violet-800">ISRC: {t.isrc}</p>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-amber-800">Chưa có ISRC — bước Siêu dữ liệu hoặc backend</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeAlbumTrackAt(i)}
+                            className="shrink-0 rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-700"
+                            title="Xóa track"
+                            aria-label={`Xóa track ${i + 1}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") audioInputRef.current?.click();
                   }}
-                />
-                {audioFileLabel && (
-                  <p className="mt-3 text-xs text-emerald-700">
-                    Đã chọn: <span className="font-mono">{audioFileLabel}</span>
-                  </p>
-                )}
-              </div>
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setAudioDrag(true);
+                  }}
+                  onDragLeave={() => setAudioDrag(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setAudioDrag(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) void runAudioUpload(f);
+                  }}
+                  className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+                    audioDrag ? "border-cyan-500 bg-cyan-50" : "border-slate-200 bg-slate-50"
+                  }`}
+                >
+                  <UploadCloud className="mx-auto h-10 w-10 text-cyan-600" />
+                  <p className="mt-3 text-sm font-medium text-slate-800">Kéo thả file vào đây</p>
+                  <p className="mt-1 text-xs text-slate-500">hoặc</p>
+                  <button
+                    type="button"
+                    disabled={audioUploading}
+                    onClick={() => audioInputRef.current?.click()}
+                    className="mt-3 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
+                  >
+                    {audioUploading ? "Đang tải lên…" : "Chọn file từ máy tính"}
+                  </button>
+                  <input
+                    ref={audioInputRef}
+                    type="file"
+                    accept=".wav,.flac,.mp3,audio/wav,audio/flac,audio/mpeg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void runAudioUpload(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  {audioFileLabel && (
+                    <p className="mt-3 text-xs text-emerald-700">
+                      Đã chọn: <span className="font-mono">{audioFileLabel}</span>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -934,6 +1336,21 @@ export default function CreateReleaseFlow() {
                       if (!e.target.value) setAudioFileLabel(null);
                     }}
                   />
+                  {releaseKind === "album_ep" && formData.albumTracks.length > 0 ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      <p className="mb-2">
+                        Đang dùng <strong>{formData.albumTracks.length}</strong> file đã upload làm danh sách track. Để
+                        chỉ dùng một URL âm thanh (một file), xóa danh sách track.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => clearAlbumMultiTracks()}
+                        className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium text-amber-900 hover:bg-amber-100"
+                      >
+                        Xóa danh sách track
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">URL ảnh bìa</label>
@@ -967,13 +1384,11 @@ export default function CreateReleaseFlow() {
                 onChange={(e) => setFormData({ ...formData, composer: e.target.value })}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    ISRC {releaseKind === "single" ? "*" : ""}
-                  </label>
-                  {releaseKind === "single" && (
+            {releaseKind === "single" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">ISRC *</label>
                     <button
                       type="button"
                       onClick={() => void fetchNextIsrc()}
@@ -981,24 +1396,20 @@ export default function CreateReleaseFlow() {
                     >
                       Lấy ISRC tiếp theo từ kho (VNE0M26…)
                     </button>
-                  )}
+                  </div>
+                  <p className="mb-2 text-xs text-slate-500">
+                    ISRC được cấp khi chọn Single, sau khi upload file, hoặc tại bước này — cần phiên API.
+                  </p>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
+                    placeholder="VNE0M2603000"
+                    value={formData.isrc}
+                    onChange={(e) => setFormData({ ...formData, isrc: e.target.value })}
+                  />
                 </div>
-                <p className="mb-2 text-xs text-slate-500">
-                  Single: ISRC được cấp khi chọn loại, sau khi upload file âm thanh, hoặc tại bước này nếu vẫn trống — cần đăng nhập có phiên API.
-                </p>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
-                  placeholder="VNE0M2603000"
-                  value={formData.isrc}
-                  onChange={(e) => setFormData({ ...formData, isrc: e.target.value })}
-                />
-              </div>
-              <div>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    UPC/GTIN {releaseKind === "album_ep" ? "*" : ""}
-                  </label>
-                  {releaseKind === "album_ep" && (
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">UPC/GTIN *</label>
                     <button
                       type="button"
                       onClick={() => void fetchNextUpc()}
@@ -1006,19 +1417,134 @@ export default function CreateReleaseFlow() {
                     >
                       Lấy UPC Soul (893274 + EAN-13)
                     </button>
-                  )}
+                  </div>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Single cần cả ISRC và UPC (GTIN-13). UPC được cấp song song ISRC khi có backend.
+                  </p>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
+                    placeholder="13 chữ số (EAN-13)"
+                    value={formData.upc}
+                    onChange={(e) => setFormData({ ...formData, upc: e.target.value })}
+                  />
                 </div>
-                <p className="mb-2 text-xs text-slate-500">
-                  Album/EP: GTIN-13 — 893 (VN) + 274 (Soul) + Item Reference 000001–999999 + số kiểm EAN-13. Tự điền khi chọn Album, sau khi upload file âm thanh thành công, hoặc khi vào bước này (cần phiên API).
-                </p>
-                <input
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
-                  placeholder="13 chữ số (EAN-13)"
-                  value={formData.upc}
-                  onChange={(e) => setFormData({ ...formData, upc: e.target.value })}
-                />
               </div>
-            </div>
+            ) : formData.albumTracks.length > 0 ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">UPC/GTIN (album) *</label>
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextUpc()}
+                      className="text-xs font-medium text-violet-700 underline decoration-violet-300 hover:text-violet-900"
+                    >
+                      Lấy UPC Soul (893274 + EAN-13)
+                    </button>
+                  </div>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Một UPC cho cả release; mỗi track một ISRC (đã gán khi upload hoặc sửa bên dưới).
+                  </p>
+                  <input
+                    className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
+                    placeholder="13 chữ số (EAN-13)"
+                    value={formData.upc}
+                    onChange={(e) => setFormData({ ...formData, upc: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-medium text-slate-800">Track &amp; ISRC</p>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="px-3 py-2 font-semibold text-slate-700">#</th>
+                          <th className="px-3 py-2 font-semibold text-slate-700">Tiêu đề (Resource)</th>
+                          <th className="px-3 py-2 font-semibold text-slate-700">ISRC *</th>
+                          <th className="w-28 px-3 py-2 font-semibold text-slate-700"> </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.albumTracks.map((t, i) => (
+                          <tr key={`${t.url}-${i}`} className="border-b border-slate-100 last:border-0">
+                            <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                className="w-full rounded border border-slate-200 px-2 py-1.5 text-slate-900"
+                                value={t.title}
+                                onChange={(e) => patchAlbumTrack(i, { title: e.target.value })}
+                              />
+                              <p className="mt-1 truncate font-mono text-xs text-slate-400">{t.filename}</p>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                className="w-full min-w-[10rem] rounded border border-slate-200 px-2 py-1.5 font-mono text-xs text-slate-900"
+                                value={t.isrc}
+                                onChange={(e) => patchAlbumTrack(i, { isrc: e.target.value })}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => void fetchNextIsrcForAlbumTrack(i)}
+                                className="text-xs font-medium text-violet-700 underline"
+                              >
+                                ISRC mới
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">ISRC *</label>
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextIsrc()}
+                      className="text-xs font-medium text-violet-700 underline decoration-violet-300 hover:text-violet-900"
+                    >
+                      Lấy ISRC tiếp theo
+                    </button>
+                  </div>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Album một file: một ISRC cho bản ghi âm thanh đã tải.
+                  </p>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
+                    placeholder="VNE0M2603000"
+                    value={formData.isrc}
+                    onChange={(e) => setFormData({ ...formData, isrc: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-700">UPC/GTIN *</label>
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextUpc()}
+                      className="text-xs font-medium text-violet-700 underline decoration-violet-300 hover:text-violet-900"
+                    >
+                      Lấy UPC Soul (893274 + EAN-13)
+                    </button>
+                  </div>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Album/EP: GTIN-13 — tự điền khi chọn loại hoặc sau khi upload (cần phiên API).
+                  </p>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 font-mono text-sm text-slate-900"
+                    placeholder="13 chữ số (EAN-13)"
+                    value={formData.upc}
+                    onChange={(e) => setFormData({ ...formData, upc: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1177,18 +1703,33 @@ export default function CreateReleaseFlow() {
               </dd>
               <dt className="text-slate-500">Soạn giả</dt>
               <dd className="text-slate-900">{formData.composer.trim() || "—"}</dd>
-              <dt className="text-slate-500">{releaseKind === "single" ? "ISRC" : "UPC"}</dt>
+              <dt className="text-slate-500">ISRC</dt>
               <dd className="font-mono text-xs text-slate-900">
-                {releaseKind === "single" ? formData.isrc || "—" : formData.upc || "—"}
+                {releaseKind === "single"
+                  ? formData.isrc || "—"
+                  : formData.albumTracks.length > 0
+                    ? `${formData.albumTracks.length} track (mỗi track một mã)`
+                    : formData.isrc || "—"}
               </dd>
+              <dt className="text-slate-500">UPC</dt>
+              <dd className="font-mono text-xs text-slate-900">{formData.upc || "—"}</dd>
               <dt className="text-slate-500">Ngày phát hành</dt>
               <dd className="text-slate-900">{formData.releaseDate || "—"}</dd>
               <dt className="text-slate-500">Khu vực phân phối</dt>
               <dd className="text-slate-900">{formData.territories}</dd>
               <dt className="text-slate-500">URL âm thanh</dt>
               <dd className="break-all font-mono text-xs text-slate-900">
-                {audioFileLabel ? `${audioFileLabel} → ` : ""}
-                {formData.audioAssetUrl || "—"}
+                {formData.albumTracks.length > 0 ? (
+                  <span>
+                    {formData.albumTracks.length} track — ví dụ track 1:{" "}
+                    {formData.albumTracks[0]?.url || "—"}
+                  </span>
+                ) : (
+                  <span>
+                    {audioFileLabel ? `${audioFileLabel} → ` : ""}
+                    {formData.audioAssetUrl || "—"}
+                  </span>
+                )}
               </dd>
               <dt className="text-slate-500">Pre-order</dt>
               <dd className="text-slate-900">{formData.preorder ? "Có" : "Không"}</dd>
