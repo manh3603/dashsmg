@@ -3,8 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Music, Mail, User, Building2 } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
+import { Mail, User, Building2 } from "lucide-react";
 import { useAccount } from "@/context/AccountContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { isBackendConfigured, postAuthRegister } from "@/lib/backend-api";
 
 type AccountType = "artist" | "label";
@@ -12,6 +14,7 @@ type AccountType = "artist" | "label";
 export default function RegisterPage() {
   const { setSession } = useAccount();
   const router = useRouter();
+  const { t } = useLanguage();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,10 +50,10 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link href="/" className="flex justify-center text-violet-600 hover:text-violet-500">
-          <Music size={48} />
+        <Link href="/" className="flex justify-center">
+          <BrandLogo size={56} className="rounded-lg" />
         </Link>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">Đăng ký</h2>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">{t("register.title")}</h2>
         <p className="mt-2 text-center text-sm text-slate-600">
           Đã có tài khoản?{" "}
           <Link href="/login" className="font-medium text-violet-600 hover:text-violet-500">
@@ -155,7 +158,7 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full py-2.5 rounded-md bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-medium hover:from-violet-700 hover:to-fuchsia-700 disabled:opacity-60"
             >
-              {loading ? "Đang tạo tài khoản…" : "Tạo tài khoản"}
+              {loading ? t("common.saving") : t("register.submit")}
             </button>
           </form>
         </div>

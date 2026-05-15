@@ -3,7 +3,8 @@
 import { Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ExternalLink, Music } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
+import { ExternalLink } from "lucide-react";
 
 function SpotifySearchUrl(q: string) {
   return `https://open.spotify.com/search/${encodeURIComponent(q)}`;
@@ -41,9 +42,9 @@ function SmartLinkInner() {
     <div className="min-h-screen bg-gradient-to-br from-black via-violet-950 to-zinc-950 text-white">
       <header className="border-b border-white/10 px-6 py-6">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <Music className="h-10 w-10 text-fuchsia-400" />
+          <BrandLogo size={40} className="rounded-md" />
           <div>
-            <p className="text-xs uppercase tracking-wider text-violet-300/80">Soul Music Asia · Smart Link</p>
+            <p className="text-xs uppercase tracking-wider text-violet-300/80">Orbital Music Group · Smart Link</p>
             <h1 className="text-2xl font-bold">
               {title || artist ? [title, artist].filter(Boolean).join(" — ") : "Smart Link"}
             </h1>
@@ -85,7 +86,7 @@ function SmartLinkInner() {
 
         <p className="mt-12 text-center text-xs text-slate-500">
           <Link href="/" className="text-violet-300 hover:underline">
-            SMG Distribution
+            Orbital Music Group (OMG)
           </Link>
         </p>
       </main>

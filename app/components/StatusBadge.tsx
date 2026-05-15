@@ -1,3 +1,7 @@
+"use client";
+
+import { useLanguage } from "@/context/LanguageContext";
+import type { PageMessageKey } from "@/lib/i18n/page-messages";
 import type { ReleaseStatus } from "@/lib/smg-storage";
 
 const styles: Record<ReleaseStatus, string> = {
@@ -10,20 +14,21 @@ const styles: Record<ReleaseStatus, string> = {
   draft: "bg-slate-100 text-slate-700 ring-slate-500/20",
 };
 
-const labels: Record<ReleaseStatus, string> = {
-  live: "Trực tiếp",
-  pending: "Chờ duyệt",
-  pending_qc: "Chờ QC SMG",
-  rejected: "Đã từ chối",
-  sent_to_stores: "Đang đẩy cửa hàng",
-  takedown: "Takedown / Gỡ cửa hàng",
-  draft: "Bản nháp",
+const STATUS_KEYS: Record<ReleaseStatus, PageMessageKey> = {
+  live: "status.live",
+  pending: "status.pending",
+  pending_qc: "status.pending_qc",
+  rejected: "status.rejected",
+  sent_to_stores: "status.sent_to_stores",
+  takedown: "status.takedown",
+  draft: "status.draft",
 };
 
 export function StatusBadge({ status }: { status: ReleaseStatus }) {
+  const { t } = useLanguage();
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${styles[status]}`}>
-      {labels[status]}
+      {t(STATUS_KEYS[status])}
     </span>
   );
 }

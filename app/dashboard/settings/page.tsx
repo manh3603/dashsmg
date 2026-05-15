@@ -115,7 +115,7 @@ export default function SettingsPage() {
               hàng, theo deal đã ký).
             </>
           ) : (
-            <span className="text-slate-500">Chưa gán tỷ lệ cho email này — liên hệ SMG hoặc quản trị.</span>
+            <span className="text-slate-500">Chưa gán tỷ lệ cho email này — liên hệ OMG hoặc quản trị.</span>
           )}
         </p>
       </section>

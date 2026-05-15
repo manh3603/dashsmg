@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Music, KeyRound, Link2 } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
+import { KeyRound, Link2 } from "lucide-react";
 
 type Mode = "choose" | "otp" | "link";
 
@@ -23,8 +24,8 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link href="/" className="flex justify-center text-violet-600">
-          <Music size={48} />
+        <Link href="/" className="flex justify-center">
+          <BrandLogo size={56} className="rounded-lg" />
         </Link>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">Quên mật khẩu</h2>
         <p className="mt-2 text-center text-sm text-slate-600">

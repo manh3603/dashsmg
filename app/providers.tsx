@@ -1,7 +1,12 @@
 "use client";
 
 import { AccountProvider } from "@/context/AccountContext";
+import { LanguageProvider } from "@/context/LanguageContext";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <AccountProvider>{children}</AccountProvider>;
+  return (
+    <LanguageProvider>
+      <AccountProvider>{children}</AccountProvider>
+    </LanguageProvider>
+  );
 }

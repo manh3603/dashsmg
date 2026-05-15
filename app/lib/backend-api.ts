@@ -290,6 +290,7 @@ export type ServerStoredAccount = {
   role: import("@/lib/smg-storage").AccountRole;
   displayName: string;
   orgLabel?: string;
+  managedByLogin?: string;
   royaltySharePercent?: number;
   createdAt: string;
   updatedAt: string;
@@ -338,6 +339,79 @@ export async function postAdminAccountUpsert(
         Authorization: `Bearer ${sessionToken.trim()}`,
       },
       body: JSON.stringify(user),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postLabelArtistList(
+  sessionToken: string
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/label/artist-list`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({}),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postLabelArtistUpsert(
+  sessionToken: string,
+  user: {
+    login: string;
+    password?: string;
+    displayName: string;
+    royaltySharePercent?: number | null;
+  }
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/label/artist-upsert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify(user),
+    });
+    const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || res.statusText };
+    return { ok: true, accounts: data.accounts ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lỗi mạng" };
+  }
+}
+
+export async function postLabelArtistDelete(
+  sessionToken: string,
+  targetLogin: string
+): Promise<{ ok: true; accounts: ServerStoredAccount[] } | { ok: false; error: string }> {
+  const base = baseUrl();
+  if (!base) return { ok: false, error: "Chưa cấu hình API." };
+  try {
+    const res = await fetch(`${base}/api/label/artist-delete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+      },
+      body: JSON.stringify({ targetLogin }),
     });
     const data = (await res.json().catch(() => ({}))) as { accounts?: ServerStoredAccount[]; error?: string };
     if (!res.ok) return { ok: false, error: data.error || res.statusText };

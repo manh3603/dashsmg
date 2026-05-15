@@ -3,20 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, ArrowUpDown, Trash2, X, Ban } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { CatalogItem, ReleaseStatus } from "@/lib/smg-storage";
 import { getCatalog, removeCatalogItem, updateCatalogStatus } from "@/lib/smg-storage";
 import { catalogItemToDisplayTable } from "@/lib/catalog-table";
+import { useLanguage } from "@/context/LanguageContext";
+import type { PageMessageKey } from "@/lib/i18n/page-messages";
 
-const filters: { key: "all" | ReleaseStatus; label: string }[] = [
-  { key: "all", label: "Tất cả" },
-  { key: "pending_qc", label: "Chờ QC SMG" },
-  { key: "sent_to_stores", label: "Đang đẩy CH" },
-  { key: "pending", label: "Chờ (cũ)" },
-  { key: "live", label: "Trực tiếp" },
-  { key: "takedown", label: "Takedown" },
-  { key: "rejected", label: "Đã từ chối" },
-  { key: "draft", label: "Bản nháp" },
+const FILTERS: { key: "all" | ReleaseStatus; labelKey: PageMessageKey }[] = [
+  { key: "all", labelKey: "catalog.filter.all" },
+  { key: "pending_qc", labelKey: "catalog.filter.pendingQc" },
+  { key: "sent_to_stores", labelKey: "catalog.filter.sentToStores" },
+  { key: "pending", labelKey: "status.pending" },
+  { key: "live", labelKey: "catalog.filter.live" },
+  { key: "takedown", labelKey: "status.takedown" },
+  { key: "rejected", labelKey: "catalog.filter.rejected" },
+  { key: "draft", labelKey: "catalog.filter.draft" },
 ];
 
 function canEditResubmit(status: ReleaseStatus): boolean {
@@ -35,8 +38,9 @@ function canRequestTakedown(status: ReleaseStatus): boolean {
 }
 
 export default function CatalogPage() {
+  const { t } = useLanguage();
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<(typeof filters)[number]["key"]>("all");
+  const [statusFilter, setStatusFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
   const [sortAsc, setSortAsc] = useState(true);
   const [list, setList] = useState<CatalogItem[]>([]);
   const [detail, setDetail] = useState<CatalogItem | null>(null);
@@ -80,9 +84,12 @@ export default function CatalogPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Quản lý kho nhạc</h1>
-        <p className="mt-1 text-slate-600">Album / Single — đồng bộ trạng thái với QC SMG và cửa hàng</p>
+      <div className="flex items-start gap-4">
+        <BrandLogo size={48} className="shrink-0 shadow-sm ring-1 ring-slate-200/80" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-900">{t("catalog.title")}</h1>
+          <p className="mt-1 text-slate-600">{t("catalog.subtitle")}</p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -90,14 +97,14 @@ export default function CatalogPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
-            placeholder="Tìm theo tên, ISRC, UPC..."
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm outline-none ring-cyan-500 focus:ring-2"
+            placeholder={t("catalog.search.placeholder")}
+            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none ring-cyan-500 focus:ring-2"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          {filters.map((f) => (
+          {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
@@ -106,7 +113,7 @@ export default function CatalogPage() {
                 statusFilter === f.key ? "bg-cyan-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
               }`}
             >
-              {f.label}
+              {t(f.labelKey)}
             </button>
           ))}
         </div>
@@ -119,12 +126,12 @@ export default function CatalogPage() {
               <tr>
                 <th className="px-4 py-3 font-medium">
                   <button type="button" className="inline-flex items-center gap-1 hover:text-slate-900" onClick={() => setSortAsc((s) => !s)}>
-                    Sản phẩm
+                    {t("catalog.table.product")}
                     <ArrowUpDown className="h-3.5 w-3.5" />
                   </button>
                 </th>
                 <th className="px-4 py-3 font-medium">Loại</th>
-                <th className="px-4 py-3 font-medium">Trạng thái</th>
+                <th className="px-4 py-3 font-medium">{t("catalog.table.status")}</th>
                 <th className="px-4 py-3 font-medium">ISRC</th>
                 <th className="px-4 py-3 font-medium">UPC</th>
                 <th className="px-4 py-3 font-medium">Cập nhật</th>
@@ -191,7 +198,7 @@ export default function CatalogPage() {
             </tbody>
           </table>
         </div>
-        {rows.length === 0 && <p className="p-8 text-center text-slate-500">Không có bản ghi phù hợp.</p>}
+        {rows.length === 0 && <p className="p-8 text-center text-slate-500">{t("catalog.empty")}</p>}
       </div>
 
       {detail && (
@@ -302,7 +309,7 @@ export default function CatalogPage() {
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 onClick={() => setTakedownTarget(null)}
               >
-                Hủy
+                {t("catalog.common.cancel")}
               </button>
               <button
                 type="button"
@@ -337,7 +344,7 @@ export default function CatalogPage() {
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 onClick={() => setDeleteTarget(null)}
               >
-                Hủy
+                {t("catalog.common.cancel")}
               </button>
               <button
                 type="button"

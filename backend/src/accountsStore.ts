@@ -15,6 +15,8 @@ export type StoredAccount = {
   role: AccountRole;
   displayName: string;
   orgLabel?: string;
+  /** Login admin nhãn đã tạo tài khoản nghệ sĩ con. */
+  managedByLogin?: string;
   royaltySharePercent?: number;
   createdAt: string;
   updatedAt: string;
@@ -75,6 +77,7 @@ export function toPublicAccount(a: StoredAccount): StoredAccountPublic {
     role: a.role,
     displayName: a.displayName,
     orgLabel: a.orgLabel,
+    managedByLogin: a.managedByLogin,
     royaltySharePercent: a.royaltySharePercent,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,
@@ -219,6 +222,121 @@ export function deleteStoredAccount(loginRaw: string): { ok: true } | { ok: fals
   if (removed.role === "platform_admin" && admins.length === 0) {
     return { ok: false, error: "Không thể xóa quản trị nền tảng cuối cùng." };
   }
+  writeAccounts(next);
+  return { ok: true };
+}
+
+function findLabelAdmin(loginRaw: string): StoredAccount | undefined {
+  const a = findStoredAccount(loginRaw);
+  if (!a || a.role !== "customer_admin") return undefined;
+  return a;
+}
+
+export function listLabelArtistAccounts(labelLoginRaw: string): StoredAccountPublic[] {
+  const labelKey = normalizeLoginKey(labelLoginRaw);
+  return readAccounts()
+    .filter(
+      (a) =>
+        a.role === "artist" &&
+        a.managedByLogin != null &&
+        normalizeLoginKey(a.managedByLogin) === labelKey
+    )
+    .map(toPublicAccount);
+}
+
+export function upsertLabelArtistAccount(
+  labelLoginRaw: string,
+  input: {
+    login: string;
+    password?: string;
+    displayName: string;
+    royaltySharePercent?: number | null;
+  }
+): { ok: true } | { ok: false; error: string } {
+  const label = findLabelAdmin(labelLoginRaw);
+  if (!label) return { ok: false, error: "Cần phiên admin nhãn (label)." };
+
+  const login = input.login.trim();
+  if (!normalizeLoginKey(login)) return { ok: false, error: "Thiếu tên đăng nhập." };
+
+  const all = readAccounts();
+  const i = all.findIndex((a) => normalizeLoginKey(a.login) === normalizeLoginKey(login));
+  const now = new Date().toISOString();
+  const labelOrg = label.orgLabel?.trim() || undefined;
+
+  if (i < 0) {
+    if (findStoredAccount(login)) return { ok: false, error: "Tài khoản đã tồn tại." };
+    const pwd = input.password?.trim() ?? "";
+    if (pwd.length < 8) return { ok: false, error: "Tài khoản mới cần mật khẩu tối thiểu 8 ký tự." };
+    const row: StoredAccount = {
+      id: randomUUID(),
+      login,
+      passwordHash: bcrypt.hashSync(pwd, 10),
+      role: "artist",
+      displayName: input.displayName.trim() || login,
+      orgLabel: labelOrg,
+      managedByLogin: label.login.trim(),
+      royaltySharePercent:
+        input.royaltySharePercent != null && Number.isFinite(input.royaltySharePercent)
+          ? Math.min(100, Math.max(0, input.royaltySharePercent))
+          : undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+    all.push(row);
+    writeAccounts(all);
+    return { ok: true };
+  }
+
+  const cur = all[i]!;
+  if (cur.role !== "artist") {
+    return { ok: false, error: "Chỉ có thể quản lý tài khoản nghệ sĩ do nhãn tạo." };
+  }
+  if (!cur.managedByLogin || normalizeLoginKey(cur.managedByLogin) !== normalizeLoginKey(label.login)) {
+    return { ok: false, error: "Tài khoản này không thuộc nhãn của bạn." };
+  }
+
+  const pwd = input.password?.trim();
+  let passwordHash = cur.passwordHash;
+  if (pwd && pwd.length >= 8) passwordHash = bcrypt.hashSync(pwd, 10);
+  else if (pwd && pwd.length > 0 && pwd.length < 8) {
+    return { ok: false, error: "Mật khẩu mới tối thiểu 8 ký tự (hoặc để trống để giữ mật khẩu cũ)." };
+  }
+
+  all[i] = {
+    ...cur,
+    displayName: input.displayName.trim() || login,
+    orgLabel: labelOrg ?? cur.orgLabel,
+    royaltySharePercent:
+      input.royaltySharePercent === null || input.royaltySharePercent === undefined
+        ? undefined
+        : Math.min(100, Math.max(0, Number(input.royaltySharePercent))),
+    passwordHash,
+    updatedAt: now,
+  };
+  writeAccounts(all);
+  return { ok: true };
+}
+
+export function deleteLabelArtistAccount(
+  labelLoginRaw: string,
+  targetLoginRaw: string
+): { ok: true } | { ok: false; error: string } {
+  const label = findLabelAdmin(labelLoginRaw);
+  if (!label) return { ok: false, error: "Cần phiên admin nhãn (label)." };
+
+  const k = normalizeLoginKey(targetLoginRaw);
+  const all = readAccounts();
+  const target = all.find((a) => normalizeLoginKey(a.login) === k);
+  if (!target) return { ok: false, error: "Không tìm thấy tài khoản." };
+  if (target.role !== "artist") {
+    return { ok: false, error: "Chỉ có thể xóa tài khoản nghệ sĩ." };
+  }
+  if (!target.managedByLogin || normalizeLoginKey(target.managedByLogin) !== normalizeLoginKey(label.login)) {
+    return { ok: false, error: "Tài khoản này không thuộc nhãn của bạn." };
+  }
+
+  const next = all.filter((a) => normalizeLoginKey(a.login) !== k);
   writeAccounts(next);
   return { ok: true };
 }

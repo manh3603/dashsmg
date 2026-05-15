@@ -1,0 +1,15 @@
+[
+  {
+    "id": "example-sp-digital-cis",
+    "partnerName": "SP Digital (CIS)",
+    "contractRef": "BlackOrchid",
+    "territory": "CIS",
+    "reportingStores": "VK Music, Yandex Music, ZVUK, Kion Music",
+    "deliveryCisStoreKeys": ["vk_music", "yandex_music", "zvuk", "kion_music"],
+    "deliverySftpTargetsJson": "[{\"host\":\"sftp1.sp-digital.ru\",\"hostFallback\":\"195.46.167.154\",\"port\":22,\"user\":\"BlackOrchid\",\"password\":\"YOUR_PASSWORD_HERE\",\"remoteDir\":\"/\",\"label\":\"SP Digital CIS — VK / Yandex / ZVUK / Kion\"}]",
+    "notes": "Partner ready for first test package (2–3 products). Copy to backend/data/partner-deals.json and set status active.",
+    "status": "active",
+    "createdAt": "2026-05-15T00:00:00.000Z",
+    "updatedAt": "2026-05-15T00:00:00.000Z"
+  }
+]

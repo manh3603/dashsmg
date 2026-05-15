@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Music } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
+import { Eye, EyeOff } from "lucide-react";
 import { useAccount } from "@/context/AccountContext";
+import { useLanguage } from "@/context/LanguageContext";
 import {
   fetchBackendHealthPayload,
   fetchDemoAuthHints,
@@ -16,6 +18,7 @@ import {
 export default function LoginPage() {
   const router = useRouter();
   const { setSession } = useAccount();
+  const { t } = useLanguage();
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -63,14 +66,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <Link href="/" className="flex justify-center text-violet-600 hover:text-violet-500">
-          <Music size={48} />
+        <Link href="/" className="flex justify-center">
+          <BrandLogo size={56} className="rounded-lg" />
         </Link>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">Đăng nhập</h2>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900">{t("login.title")}</h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Chưa có tài khoản?{" "}
+          {t("login.noAccount")}{" "}
           <Link href="/register" className="font-medium text-violet-600 hover:text-violet-500">
-            Đăng ký
+            {t("login.register")}
           </Link>
         </p>
       </div>
@@ -88,7 +91,7 @@ export default function LoginPage() {
             )}
             <div>
               <label htmlFor="login" className="block text-sm font-medium text-slate-700">
-                Tên đăng nhập
+                {t("login.username")}
               </label>
               <input
                 id="login"
@@ -105,7 +108,7 @@ export default function LoginPage() {
             <div>
               <div className="flex justify-between">
                 <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-                  Mật khẩu
+                  {t("login.password")}
                 </label>
                 <Link href="/forgot-password" className="text-sm text-violet-600 hover:text-violet-500">
                   Quên mật khẩu?
@@ -140,7 +143,7 @@ export default function LoginPage() {
               type="submit"
               className="w-full py-2.5 px-4 border border-transparent rounded-md shadow-sm text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 font-medium"
             >
-              Đăng nhập
+              {t("login.submit")}
             </button>
           </form>
 

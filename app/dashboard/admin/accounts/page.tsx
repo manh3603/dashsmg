@@ -12,6 +12,7 @@ import {
   postAdminAccountUpsert,
   type ServerStoredAccount,
 } from "@/lib/backend-api";
+import { useLanguage } from "@/context/LanguageContext";
 import { roleDisplayLabel } from "@/lib/permissions";
 
 const ROLE_OPTIONS: { value: AccountRole; label: string }[] = [
@@ -21,6 +22,7 @@ const ROLE_OPTIONS: { value: AccountRole; label: string }[] = [
 ];
 
 export default function AdminAccountsPage() {
+  const { locale } = useLanguage();
   const [rows, setRows] = useState<ServerStoredAccount[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [login, setLogin] = useState("");
@@ -299,7 +301,7 @@ export default function AdminAccountsPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="mt-1 text-[10px] text-slate-500">{roleDisplayLabel(r.role)}</p>
+                    <p className="mt-1 text-[10px] text-slate-500">{roleDisplayLabel(r.role, locale)}</p>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button

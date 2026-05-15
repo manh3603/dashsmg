@@ -1,26 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { Music, Zap, DollarSign, ShieldCheck, ArrowRight } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
+import { BRAND_FULL } from "@/lib/brand";
+import { Zap, DollarSign, ShieldCheck, ArrowRight } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function LandingPage() {
+  const { t } = useLanguage();
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-violet-950 to-indigo-950 text-white">
       <header className="border-b border-white/10 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2 font-semibold tracking-tight">
-            <Music className="h-8 w-8 text-fuchsia-400" />
-            <span className="text-lg">SMG Distribution</span>
-          </div>
+          <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight">
+            <BrandLogo size={36} />
+            <span className="text-lg">{BRAND_FULL}</span>
+          </Link>
           <nav className="flex items-center gap-3 text-sm">
             <Link href="/login" className="rounded-lg px-4 py-2 text-slate-300 hover:bg-white/10 hover:text-white">
-              Đăng nhập
+              {t("landing.nav.login")}
             </Link>
             <Link
               href="/register"
               className="rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 font-medium text-white hover:from-violet-400 hover:to-fuchsia-400"
             >
-              Đăng ký
+              {t("landing.nav.register")}
             </Link>
           </nav>
         </div>
@@ -32,7 +36,7 @@ export default function LandingPage() {
             Phân phối nhạc toàn cầu · Content ID
           </p>
           <h1 className="max-w-3xl text-4xl font-bold leading-tight tracking-tight md:text-5xl lg:text-6xl">
-            Đưa âm nhạc của bạn lên mọi nền tảng — nhanh, minh bạch, đáng tin cậy
+            {t("landing.hero.title")}
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-slate-400">
             Nền tảng phát hành dành cho nghệ sĩ độc lập và nhãn đĩa: giao diện nhẹ, quy trình rõ ràng, hỗ trợ bảo vệ bản quyền và báo cáo thu nhập chi tiết.
@@ -42,7 +46,7 @@ export default function LandingPage() {
               href="/register"
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 py-3 font-semibold text-white hover:from-violet-400 hover:to-fuchsia-400"
             >
-              Bắt đầu miễn phí
+              {t("landing.cta.start")}
               <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
@@ -87,7 +91,7 @@ export default function LandingPage() {
         </section>
 
         <footer className="border-t border-white/10 py-8 text-center text-sm text-slate-500">
-          © {new Date().getFullYear()} SMG Distribution · Phát hành nhạc số
+          © {new Date().getFullYear()} {BRAND_FULL} · Phát hành nhạc số
         </footer>
       </main>
     </div>

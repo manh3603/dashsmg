@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Music, Pause, Play, SkipBack, SkipForward, Volume2 } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function MiniAudioPlayer() {
+  const { t } = useLanguage();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export default function MiniAudioPlayer() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4">
         <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-violet-700/50 bg-black/30 px-3 py-2 text-sm text-slate-300 hover:bg-violet-950/40">
           <Music className="h-4 w-4 shrink-0 text-fuchsia-400" />
-          <span>{fileName ? "Đổi file" : "Thử nghe file tải lên"}</span>
+          <span>{fileName ? t("player.changeFile") : t("player.pickFile")}</span>
           <input type="file" accept="audio/wav,audio/flac,audio/mpeg,audio/*" className="hidden" onChange={onPickFile} />
         </label>
 
@@ -124,7 +126,7 @@ export default function MiniAudioPlayer() {
           </>
         )}
         {!url && (
-          <p className="text-xs text-slate-500">Chọn file WAV/FLAC/MP3 để nghe thử trước khi gửi duyệt.</p>
+          <p className="text-xs text-slate-500">{t("player.hint")}</p>
         )}
       </div>
     </div>

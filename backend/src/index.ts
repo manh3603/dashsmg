@@ -20,14 +20,18 @@ import { tryAuthLogin } from "./auth/login.js";
 import {
   createFirstPlatformAdmin,
   createStoredAccount,
+  deleteLabelArtistAccount,
   deleteStoredAccount,
+  listLabelArtistAccounts,
   listPublicAccounts,
+  upsertLabelArtistAccount,
   upsertStoredAccountAdmin,
 } from "./accountsStore.js";
 import { allocateNextIsrc } from "./isrcAllocator.js";
 import { allocateNextSoulUpc } from "./metadata/upcAllocator.js";
 import { getBearerToken, issueSession, resolveSession, revokeSession } from "./sessionsStore.js";
 import { cisStoreKeysFromActiveDeals, deleteDeal, listDeals, upsertDeal } from "./dealsStore.js";
+import { ensureCisPartnerDealsSeeded } from "./seedCisPartnerDeals.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -189,6 +193,21 @@ function requirePlatformAdminSession(req: import("express").Request, res: import
   return s;
 }
 
+/** Admin nhãn — quản lý tài khoản nghệ sĩ con. */
+function requireCustomerAdminSession(req: import("express").Request, res: import("express").Response) {
+  const tok = getBearerToken(req.headers.authorization);
+  const s = resolveSession(tok);
+  if (!s) {
+    res.status(401).json({ error: "Cần đăng nhập (Authorization: Bearer sessionToken)." });
+    return null;
+  }
+  if (s.role !== "customer_admin") {
+    res.status(403).json({ error: "Chỉ admin nhãn (label) mới quản lý được tài khoản nghệ sĩ con." });
+    return null;
+  }
+  return s;
+}
+
 /** Phân tích / báo cáo — admin nền tảng hoặc admin nhãn (cùng quyền xem trang Analytics). */
 function requireFinancialReportsSession(req: import("express").Request, res: import("express").Response) {
   const tok = getBearerToken(req.headers.authorization);
@@ -263,6 +282,57 @@ app.post("/api/admin/account-delete", (req, res) => {
     return;
   }
   res.json({ ok: true, accounts: listPublicAccounts() });
+});
+
+/** Label — danh sách nghệ sĩ con do nhãn tạo. */
+app.post("/api/label/artist-list", (req, res) => {
+  const sess = requireCustomerAdminSession(req, res);
+  if (!sess) return;
+  res.json({ accounts: listLabelArtistAccounts(sess.login) });
+});
+
+app.post("/api/label/artist-upsert", (req, res) => {
+  const sess = requireCustomerAdminSession(req, res);
+  if (!sess) return;
+  const b = req.body as {
+    login?: string;
+    password?: string;
+    displayName?: string;
+    royaltySharePercent?: number | null;
+  };
+  const login = typeof b.login === "string" ? b.login : "";
+  if (!login.trim()) {
+    res.status(400).json({ error: "Thiếu login." });
+    return;
+  }
+  const out = upsertLabelArtistAccount(sess.login, {
+    login,
+    password: typeof b.password === "string" ? b.password : undefined,
+    displayName: typeof b.displayName === "string" ? b.displayName : login,
+    royaltySharePercent: b.royaltySharePercent,
+  });
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, accounts: listLabelArtistAccounts(sess.login) });
+});
+
+app.post("/api/label/artist-delete", (req, res) => {
+  const sess = requireCustomerAdminSession(req, res);
+  if (!sess) return;
+  const b = req.body as { targetLogin?: string };
+  const target = typeof b.targetLogin === "string" ? b.targetLogin.trim() : "";
+  if (!target) {
+    res.status(400).json({ error: "Thiếu targetLogin." });
+    return;
+  }
+  const out = deleteLabelArtistAccount(sess.login, target);
+  if (!out.ok) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, accounts: listLabelArtistAccounts(sess.login) });
 });
 
 /** Hợp đồng / deal đối tác — chỉ quản trị nền tảng. */
@@ -668,6 +738,7 @@ app.get("/api/config/cis-stores", (_req, res) => {
  * Cấu hình: ACRCLOUD_HOST, ACRCLOUD_ACCESS_KEY, ACRCLOUD_ACCESS_SECRET
  */
 app.post("/api/qc/acr-identify", async (req, res) => {
+  if (!requirePlatformAdminSession(req, res)) return;
   if (!isAcrConfigured()) {
     res.status(503).json({
       error:
@@ -754,7 +825,7 @@ const BIND_HOST = process.env.BIND_HOST || "0.0.0.0";
 
 app.listen(PORT, BIND_HOST, () => {
   const where = BIND_HOST === "0.0.0.0" ? `0.0.0.0:${PORT} (LAN: http://<IP-máy>:${PORT})` : `${BIND_HOST}:${PORT}`;
-  console.log(`SMG backend ${where} — CORS dev=phản chiếu Origin; prod=${CORS_ORIGIN}`);
+  console.log(`OMG backend ${where} — CORS dev=phản chiếu Origin; prod=${CORS_ORIGIN}`);
   console.log(`Upload: POST /api/uploads/audio | POST /api/uploads/cover (field: file)`);
   const hasAcrKeys = Boolean(
     process.env.ACRCLOUD_ACCESS_KEY?.trim() && process.env.ACRCLOUD_ACCESS_SECRET?.trim()
@@ -765,4 +836,6 @@ app.listen(PORT, BIND_HOST, () => {
   else console.log("ACRCloud: chưa bật — thêm key hoặc ACRCLOUD_MOCK=1 trong backend/.env");
   const cronExpr = process.env.DDEX_DAILY_CRON || "0 2 * * *";
   scheduleDailyDdex(cronExpr);
+  const seeded = ensureCisPartnerDealsSeeded();
+  if (seeded > 0) console.log(`Partner deals: seeded ${seeded} CIS store deal(s) from PARTNER_SFTP_SEED_* env.`);
 });

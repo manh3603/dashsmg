@@ -1,5 +1,8 @@
 /** Nhật ký thao tác QC — lưu cục bộ; hiển thị trên trang chủ (mới nhất ở trên). */
 
+import { translate, type MessageKey } from "@/lib/i18n/messages";
+import type { Locale } from "@/lib/i18n/types";
+
 export type QcActivityKind = "approve_push" | "reject" | "request_edit" | "mark_live" | "recall";
 
 export type QcActivityEntry = {
@@ -57,19 +60,14 @@ export function appendQcActivity(params: {
   emit();
 }
 
-export function qcActivityKindLabel(kind: QcActivityKind): string {
-  switch (kind) {
-    case "approve_push":
-      return "Đã duyệt — đẩy cửa hàng";
-    case "reject":
-      return "Từ chối phát hành";
-    case "request_edit":
-      return "Yêu cầu chỉnh sửa";
-    case "mark_live":
-      return "Đánh dấu live";
-    case "recall":
-      return "Thu hồi / lỗi";
-    default:
-      return "QC";
-  }
+const QC_KIND_KEYS: Record<QcActivityKind, MessageKey> = {
+  approve_push: "qc.approve_push",
+  reject: "qc.reject",
+  request_edit: "qc.request_edit",
+  mark_live: "qc.mark_live",
+  recall: "qc.recall",
+};
+
+export function qcActivityKindLabel(kind: QcActivityKind, locale: Locale = "vi"): string {
+  return translate(locale, QC_KIND_KEYS[kind] ?? "qc.default");
 }

@@ -1,4 +1,4 @@
-/** platform_admin = vận hành SMG (CMS, QC, quản lý tài khoản). customer_admin = admin label/khách (QC, không CMS/tài khoản hệ thống). */
+/** platform_admin = vận hành OMG (CMS, QC, tài khoản hệ thống). customer_admin = admin label (tạo sub nghệ sĩ, không QC/CMS). */
 export type AccountRole = "artist" | "customer_admin" | "platform_admin";
 
 export type ReleaseStatus =

@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { Link2, LifeBuoy } from "lucide-react";
 import { mailtoSupport } from "@/lib/support-contact";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function MarketingPage() {
-  const techMail = mailtoSupport("[SMG] Vé hỗ trợ kỹ thuật", "Xin chào Soul Music,\n\nTài khoản / email đăng nhập:\n\nMô tả sự cố (upload, metadata, cửa hàng):\n\n");
-  const rightsMail = mailtoSupport("[SMG] Vé bản quyền / Content ID", "Xin chào Soul Music,\n\nTài khoản / email đăng nhập:\n\nMô tả (Content ID, vi phạm, gỡ nội dung):\n\n");
+  const { t } = useLanguage();
+  const techMail = mailtoSupport("[OMG] Vé hỗ trợ kỹ thuật", "Xin chào Orbital Music Group,\n\nTài khoản / email đăng nhập:\n\nMô tả sự cố (upload, metadata, cửa hàng):\n\n");
+  const rightsMail = mailtoSupport("[OMG] Vé bản quyền / Content ID", "Xin chào Orbital Music Group,\n\nTài khoản / email đăng nhập:\n\nMô tả (Content ID, vi phạm, gỡ nội dung):\n\n");
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Công cụ bổ sung</h1>
-        <p className="mt-1 text-slate-600">SmartLink cho fan và kênh hỗ trợ qua email Soul Music Asia</p>
+        <h1 className="text-2xl font-bold text-slate-900">{t("marketing.title")}</h1>
+        <p className="mt-1 text-slate-600">{t("marketing.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -28,7 +30,7 @@ export default function MarketingPage() {
             href="/dashboard/marketing/smartlink"
             className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 py-2.5 text-sm font-medium text-white hover:from-violet-700 hover:to-fuchsia-700"
           >
-            Tạo Smart Link
+            {t("marketing.smartlink.create")}
           </Link>
         </div>
 

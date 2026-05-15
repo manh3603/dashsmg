@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import RequireFinancialAccess from "@/components/RequireFinancialAccess";
+import { useLanguage } from "@/context/LanguageContext";
 import { isBackendConfigured, postAnalyticsReport, type AnalyticsReportPayload } from "@/lib/backend-api";
 import { getApiSessionToken } from "@/lib/smg-storage";
 
@@ -31,6 +32,7 @@ function tablePlaceholder(report: AnalyticsReportPayload | null): string {
 }
 
 function AnalyticsPageContent() {
+  const { t } = useLanguage();
   const [noBackend, setNoBackend] = useState(false);
   const [needLogin, setNeedLogin] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -105,7 +107,7 @@ function AnalyticsPageContent() {
   if (noBackend) {
     return (
       <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950">
-        <h1 className="text-2xl font-bold">Phân tích</h1>
+        <h1 className="text-2xl font-bold">{t("nav.analytics")}</h1>
         <p className="text-sm">
           Chưa cấu hình API — đặt <code className="rounded bg-amber-100 px-1 text-xs">NEXT_PUBLIC_BACKEND_URL</code> hoặc chạy{" "}
           <code className="rounded bg-amber-100 px-1 text-xs">npm run dev:all</code>.
@@ -117,7 +119,7 @@ function AnalyticsPageContent() {
   if (needLogin) {
     return (
       <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900">Phân tích</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("nav.analytics")}</h1>
         <p className="text-sm text-slate-600">Đăng nhập lại để tải báo cáo stream từ đối tác.</p>
         <Link href="/login" className="inline-block text-sm font-medium text-violet-600 hover:underline">
           Đăng nhập
@@ -129,7 +131,7 @@ function AnalyticsPageContent() {
   if (busy) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900">Phân tích</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("nav.analytics")}</h1>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full min-w-[320px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
@@ -142,7 +144,7 @@ function AnalyticsPageContent() {
               <tr>
                 <td colSpan={2} className="px-4 py-10 text-center text-slate-500">
                   <span className="mr-2 inline-block h-5 w-5 animate-spin rounded-full border-2 border-violet-600 border-t-transparent align-middle" aria-hidden />
-                  Đang tải báo cáo…
+                  {t("analytics.loading")}
                 </td>
               </tr>
             </tbody>
@@ -155,7 +157,7 @@ function AnalyticsPageContent() {
   if (loadError) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-900">Phân tích</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("nav.analytics")}</h1>
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{loadError}</div>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full min-w-[320px] text-left text-sm">
@@ -182,8 +184,8 @@ function AnalyticsPageContent() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Phân tích</h1>
-          <p className="mt-1 text-sm text-slate-600">Stream theo cửa hàng (API đối tác qua backend)</p>
+          <h1 className="text-2xl font-bold text-slate-900">{t("nav.analytics")}</h1>
+          <p className="mt-1 text-sm text-slate-600">{t("analytics.subtitle")}</p>
         </div>
         {report?.asOf ? (
           <p className="text-xs text-slate-500">
@@ -193,13 +195,13 @@ function AnalyticsPageContent() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm">
-        <p className="text-sm font-medium text-slate-600">Tổng stream</p>
+        <p className="text-sm font-medium text-slate-600">{t("analytics.totalStreams")}</p>
         <p className="mt-1 text-2xl font-bold text-violet-900 sm:text-3xl">{hasRows ? formatStreams(totalStreams) : "—"}</p>
       </div>
 
       {hasRows ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          <h2 className="text-lg font-semibold text-slate-900">Biểu đồ theo cửa hàng</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t("analytics.chart.title")}</h2>
           <div className="mt-4 w-full" style={{ height: chartHeight }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>

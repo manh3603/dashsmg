@@ -40,6 +40,9 @@ import {
   isValidIsrc,
   isValidUpcGtin,
 } from "@/lib/release-validation";
+import { useLanguage } from "@/context/LanguageContext";
+import type { PageMessageKey } from "@/lib/i18n/page-messages";
+import type { LucideIcon } from "lucide-react";
 
 type ReleaseKind = "single" | "album_ep" | null;
 
@@ -49,21 +52,22 @@ function stripAudioFilename(name: string): string {
   return name.replace(/\.(wav|flac|mp3)$/i, "").trim() || name;
 }
 
-const STEPS = [
-  { id: 1, label: "Loại phát hành", icon: Disc3 },
-  { id: 2, label: "Thông tin chung", icon: Music },
-  { id: 3, label: "Tải lên", icon: UploadCloud },
-  { id: 4, label: "Siêu dữ liệu", icon: FileText },
-  { id: 5, label: "Cửa hàng & lãnh thổ", icon: Store },
-  { id: 6, label: "Lịch phát hành", icon: Calendar },
-  { id: 7, label: "Xem lại & Gửi", icon: CheckCircle },
-] as const;
+const STEPS: { id: number; labelKey: PageMessageKey; icon: LucideIcon }[] = [
+  { id: 1, labelKey: "release.step.releaseType", icon: Disc3 },
+  { id: 2, labelKey: "release.step.generalInfo", icon: Music },
+  { id: 3, labelKey: "release.step.upload", icon: UploadCloud },
+  { id: 4, labelKey: "release.step.metadata", icon: FileText },
+  { id: 5, labelKey: "release.step.storesTerritories", icon: Store },
+  { id: 6, labelKey: "release.step.schedule", icon: Calendar },
+  { id: 7, labelKey: "release.step.reviewSubmit", icon: CheckCircle },
+];
 
 const LANGS = ["Tiếng Việt", "English", "Instrumental", "Khác"];
 const GENRES_MAIN = ["EDM", "Phonk", "Vina House", "Pop", "Hip-hop", "Rock", "Khác"];
 const GENRES_SUB = ["House", "Techno", "Melodic", "Drill", "Lo-fi", "Không có"];
 
 export default function CreateReleaseFlow() {
+  const { t } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit")?.trim() || null;
@@ -909,11 +913,8 @@ export default function CreateReleaseFlow() {
 
   return (
     <div className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-      <h2 className="text-2xl font-bold text-slate-900">Phát hành nhạc</h2>
-      <p className="mt-1 text-slate-600">
-        Điền thông tin và gửi — hệ thống lưu và <strong>tự gửi metadata lên cửa hàng</strong> bạn đã chọn (theo cấu hình trên
-        server). Chi tiết hợp đồng / deal xử lý phía đối tác.
-      </p>
+      <h2 className="text-2xl font-bold text-slate-900">{t("release.title")}</h2>
+      <p className="mt-1 text-slate-600">{t("release.subtitle")}</p>
       {editId && editLoadMissing ? (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950">
           <p className="font-medium">Không tìm thấy bản ghi trong kho nhạc.</p>
@@ -972,7 +973,7 @@ export default function CreateReleaseFlow() {
                       active ? "text-cyan-700" : "text-slate-400"
                     }`}
                   >
-                    {item.label}
+                    {t(item.labelKey)}
                   </span>
                 </button>
                 {idx < STEPS.length - 1 && (
@@ -989,7 +990,7 @@ export default function CreateReleaseFlow() {
       <div className="mt-8 min-h-[320px] border-t border-slate-100 pt-8">
         {currentStep === 1 && (
           <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-slate-900">Chọn loại phát hành</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t("release.chooseType.title")}</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <button
                 type="button"
@@ -1000,7 +1001,7 @@ export default function CreateReleaseFlow() {
               >
                 <Music className="mb-2 h-8 w-8 text-cyan-600" />
                 <p className="font-semibold text-slate-900">Single</p>
-                <p className="mt-1 text-sm text-slate-600">Một bài — ISRC và UPC (tự cấp khi có API)</p>
+                <p className="mt-1 text-sm text-slate-600">{t("release.single.hint")}</p>
               </button>
               <button
                 type="button"
@@ -1011,7 +1012,7 @@ export default function CreateReleaseFlow() {
               >
                 <Disc3 className="mb-2 h-8 w-8 text-cyan-600" />
                 <p className="font-semibold text-slate-900">Album / EP</p>
-                <p className="mt-1 text-sm text-slate-600">Một UPC — nhiều track, mỗi track một ISRC (upload nhiều file)</p>
+                <p className="mt-1 text-sm text-slate-600">{t("release.albumEp.hint")}</p>
               </button>
             </div>
           </div>
@@ -1773,12 +1774,12 @@ export default function CreateReleaseFlow() {
             <div className="border-b border-slate-100 px-6 py-4">
               <h3 id="submit-modal-title" className="text-lg font-semibold text-slate-900">
                 {submitModal.table.length === 0 && submitModal.deliveryWarning
-                  ? "Kiểm tra trước khi gửi"
-                  : "Đã gửi trình duyệt"}
+                  ? t("release.submitModal.checkTitle")
+                  : t("release.submitModal.sentTitle")}
               </h3>
               {submitModal.table.length > 0 || !submitModal.deliveryWarning ? (
                 <p className="mt-1 text-sm text-slate-600">
-                  Trạng thái: <strong>Chờ QC SMG</strong>. Bảng dữ liệu đã lưu:
+                  Trạng thái: <strong>Chờ QC OMG</strong>. Bảng dữ liệu đã lưu:
                 </p>
               ) : null}
               {submitModal.deliveryNote && (
@@ -1831,14 +1832,14 @@ export default function CreateReleaseFlow() {
                 onClick={() => setSubmitModal(null)}
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                Ở lại trang này
+                {t("release.submitModal.stay")}
               </button>
               <button
                 type="button"
                 onClick={closeSubmitModalAndGo}
                 className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
               >
-                Đến kho nhạc
+                {t("release.submitModal.goCatalog")}
               </button>
             </div>
           </div>
@@ -1852,7 +1853,7 @@ export default function CreateReleaseFlow() {
           disabled={currentStep === 1 || isLoading}
           className="rounded-lg border border-slate-200 px-6 py-2.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          Quay lại
+          {t("release.btn.back")}
         </button>
         {currentStep < STEPS.length ? (
           <button
@@ -1861,7 +1862,7 @@ export default function CreateReleaseFlow() {
             disabled={isLoading || !canNext}
             className="rounded-lg bg-cyan-600 px-6 py-2.5 font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
           >
-            {isLoading ? "Đang xử lý…" : "Tiếp tục"}
+            {isLoading ? t("release.btn.processing") : t("release.btn.next")}
           </button>
         ) : (
           <button
@@ -1870,7 +1871,7 @@ export default function CreateReleaseFlow() {
             disabled={isLoading}
             className="rounded-lg bg-emerald-600 px-6 py-2.5 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            {isLoading ? "Đang gửi…" : "Gửi trình duyệt"}
+            {isLoading ? t("release.btn.submitting") : t("release.btn.submit")}
           </button>
         )}
       </div>
